@@ -1,0 +1,182 @@
+# ============================================================
+#  Crypto Intelligence Dashboard - Ana Yapılandırma
+# ============================================================
+
+# Taranacak pariteler. Birincisi dashboard'da varsayılan olarak açılır.
+symbols:
+  - 1000SHIBUSDT
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - DOGEUSDT
+
+primary_symbol: 1000SHIBUSDT
+
+# ------------------------------------------------------------
+# Zaman dilimleri
+# ------------------------------------------------------------
+timeframes:
+  ltf: 15m      # giriş / order flow zaman dilimi
+  mtf: 1h       # ana trend zaman dilimi (skorlama bunu kullanır)
+  htf: 4h       # üst zaman dilimi teyidi
+  klines_limit: 500
+
+# ------------------------------------------------------------
+# Veri toplama
+# ------------------------------------------------------------
+data:
+  depth_limit: 100          # order book'ta okunacak seviye sayısı (max 1000)
+  agg_trades_limit: 1000    # tek seferde çekilecek agg trade (max 1000)
+  agg_trades_pages: 3       # kaç sayfa geriye gidilsin (3 x 1000 = 3000 işlem)
+  cache_ttl_seconds: 20     # aynı isteğin tekrar çekilmesini engelleyen bellek önbelleği
+  request_timeout: 15
+  max_retries: 3
+
+# ------------------------------------------------------------
+# Trend Engine
+# ------------------------------------------------------------
+trend:
+  ema_periods: [20, 50, 100, 200]
+  rsi_period: 14
+  macd: {fast: 12, slow: 26, signal: 9}
+  atr_period: 14
+  adx_period: 14
+  supertrend: {period: 10, multiplier: 3.0}
+  swing_lookback: 3         # fraktal pivot için sağ/sol mum sayısı
+
+# ------------------------------------------------------------
+# Smart Money Engine
+# ------------------------------------------------------------
+smart_money:
+  sweep_wick_ratio: 0.55    # fitil / mum boyu oranı bu değerin üstündeyse "sweep adayı"
+  sweep_volume_mult: 1.4    # sweep mumunun hacmi ortalamanın kaç katı olmalı
+  sweep_lookback: 60        # kaç mum geriye bakılıp likidite seviyeleri aranacak
+  fvg_min_size_atr: 0.15    # FVG boşluğu en az ATR'nin bu katı kadar olmalı
+  fvg_max_age: 80           # bu kadar mumdan eski FVG'ler listelenmez
+  ob_displacement_atr: 1.0  # order block sonrası hareket en az bu kadar ATR olmalı
+  max_items: 6              # her kategoriden gösterilecek maksimum kayıt
+
+# ------------------------------------------------------------
+# Derivatives Engine
+# ------------------------------------------------------------
+derivatives:
+  oi_periods: ["5m", "1h", "4h", "1d"]
+  funding_history_limit: 30
+  ls_ratio_period: "1h"
+  ls_ratio_limit: 24
+  taker_ratio_period: "5m"
+  taker_ratio_limit: 24
+  liquidation_lookback_hours: 24
+
+# ------------------------------------------------------------
+# Whale Engine (notional = USDT cinsinden işlem büyüklüğü)
+# ------------------------------------------------------------
+whale:
+  tiers: [100000, 250000, 500000, 1000000]
+  # 1000SHIB gibi paritelerde tek işlem nadiren 100k USDT'yi aşar. Bu durumda
+  # eşikler sembolün kendi işlem dağılımına göre otomatik ölçeklenir.
+  auto_scale: true
+  auto_min_hits: 5              # sabit eşiği bu kadar işlem aşmazsa ölçekle
+  auto_percentile: 99.0         # yeni taban eşik = işlem büyüklüğü yüzdeliği
+  min_tier_floor: 5000          # ölçeklenmiş taban eşiğin alt sınırı (USDT)
+  iceberg_min_repeats: 5        # aynı miktarın kaç kez tekrarlaması iceberg sayılır
+  iceberg_qty_tolerance: 0.01   # %1 miktar toleransı
+  iceberg_window_seconds: 300
+
+# ------------------------------------------------------------
+# Order Book Engine
+# ------------------------------------------------------------
+orderbook:
+  wall_multiplier: 4.0      # bir seviye, ortalama seviyenin kaç katıysa "duvar"
+  imbalance_depth_pct: 0.5  # fiyatın +/- %0.5'i içindeki likidite karşılaştırılır
+  spoof_min_notional: 150000
+  spoof_vanish_pct: 0.65    # duvarın en az %65'i işlem görmeden kaybolursa spoof
+
+# ------------------------------------------------------------
+# Risk Engine
+# ------------------------------------------------------------
+risk:
+  account_size_usdt: 1000
+  risk_per_trade_pct: 1.0
+  max_leverage: 10
+  high_volatility_atr_pct: 3.0
+  extreme_funding: 0.05      # % cinsinden (0.05 = %0.05) 8 saatlik funding
+  crowded_ls_ratio: 2.5
+
+# ------------------------------------------------------------
+# AI Skor Sistemi - ağırlıklar (toplam otomatik normalize edilir)
+# Her bileşen -1 .. +1 arası ham skor üretir, ağırlıkla çarpılır.
+# ------------------------------------------------------------
+scoring:
+  weights:
+    trend: 18
+    open_interest: 15
+    funding: 10
+    cvd: 12
+    rsi: 6
+    macd: 8
+    orderbook: 14
+    whale: 11
+    liquidation: 8
+    smart_money: 12
+  thresholds:
+    strong_long: 75
+    long: 62
+    weak_long: 55
+    neutral_high: 55
+    neutral_low: 45
+    weak_short: 45
+    short: 38
+    strong_short: 25
+
+# ------------------------------------------------------------
+# Trade Setup Engine
+# ------------------------------------------------------------
+setup:
+  min_score_for_setup: 55       # bu skorun altında setup üretilmez (nötr bölge)
+  stop_atr_multiplier: 1.5
+  tp_r_multiples: [1.5, 2.5, 4.0]
+  entry_pullback_atr: 0.35      # limit giriş için fiyattan ATR cinsinden geri çekilme
+  min_rr: 1.2
+
+# ------------------------------------------------------------
+# Alarm Sistemi
+# ------------------------------------------------------------
+alerts:
+  enabled: true
+  cooldown_minutes: 45          # aynı alarm bu süre içinde tekrar gönderilmez
+  rules:
+    oi_change_pct: 10.0         # 1 saatte OI %10 değişirse
+    funding_abs: 0.02           # funding mutlak değeri %0.02 üzerine çıkarsa
+    liquidation_usdt: 250000    # 1 saatlik likidasyon toplamı
+    whale_notional: 250000      # tek seferde bu büyüklükte whale işlemi
+    score_flip: true            # skor bölgesi değişirse (ör. Nötr -> Long)
+    score_flip_min_move: 3.0    # eşik sınırındaki küçük salınımlar alarm üretmesin
+    bos: true
+    choch: true
+    fvg: true
+    liquidity_sweep: true
+    squeeze: true               # short/long squeeze tespiti
+  channels:
+    console: true
+    telegram: false             # .env içinde TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID gerekir
+    email: false                # .env içinde SMTP_* değişkenleri gerekir
+
+# ------------------------------------------------------------
+# Zamanlayıcı
+# ------------------------------------------------------------
+scheduler:
+  scan_interval_minutes: 60     # tam tarama periyodu ("her saat")
+  fast_interval_minutes: 5      # türev verisi hızlı yenileme periyodu
+  daily_report_hour: 8
+  daily_report_minute: 0
+  collect_liquidations: true    # websocket ile likidasyon toplayıcı
+
+# ------------------------------------------------------------
+# Depolama
+# ------------------------------------------------------------
+storage:
+  db_path: data/market.db
+  reports_dir: reports
+  log_path: logs/scanner.log
+  keep_days: 30

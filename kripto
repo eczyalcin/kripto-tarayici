@@ -1,0 +1,47 @@
+#!/bin/bash
+# Kısa çalıştırıcı — ".venv/bin/python run.py ..." yerine "./kripto ..."
+#
+#   ./kripto scan            → 1000SHIBUSDT taraması
+#   ./kripto panel           → arayüzü aç
+#   ./kripto panel --lan     → telefon/diğer bilgisayarlar için ağa aç
+#   ./kripto sistem          → toplayıcı + zamanlayıcı + panel (hepsi birden)
+#   ./kripto rank            → tüm pariteleri sırala
+#
+# Nereden çağrılırsa çağrılsın kendi klasöründe çalışır.
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PY=".venv/bin/python"
+
+if [ ! -x "$PY" ]; then
+    echo "❌ Sanal ortam bulunamadı. Önce kurulumu yapın:"
+    echo "   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+    exit 1
+fi
+
+cmd="${1:-panel}"
+shift || true
+
+case "$cmd" in
+    panel|ui|arayuz|arayüz)
+        exec "$PY" run.py serve "$@"
+        ;;
+    sistem|hepsi|all)
+        exec ./sistem-baslat.sh "$@"
+        ;;
+    tara)
+        exec "$PY" run.py scan "$@"
+        ;;
+    sirala|sırala)
+        exec "$PY" run.py rank "$@"
+        ;;
+    yardim|yardım|-h|--help)
+        "$PY" run.py --help
+        echo ""
+        echo "Kısayollar: panel · sistem · tara · sirala"
+        ;;
+    *)
+        exec "$PY" run.py "$cmd" "$@"
+        ;;
+esac
