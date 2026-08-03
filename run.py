@@ -291,6 +291,102 @@ def cmd_rank(args):
             print_snapshot(s)
 
 
+def print_screener(df, limit: int = 30):
+    """Ön eleme tablosu — tüm piyasadan dikkat çekenler."""
+    wide = console.width >= 130
+    t = Table(title=f"Tüm Piyasa Ön Elemesi — en dikkat çekici {min(limit, len(df))} "
+                    f"parite ({len(df)} parite tarandı)", header_style="bold")
+    t.add_column("#", justify="right", no_wrap=True)
+    t.add_column("Parite", no_wrap=True)
+    t.add_column("Fiyat", justify="right", no_wrap=True)
+    t.add_column("24s %", justify="right", no_wrap=True)
+    t.add_column("Dikkat", justify="right", no_wrap=True)
+    t.add_column("OI 1s %", justify="right", no_wrap=True)
+    t.add_column("Fiyat 1s %", justify="right", no_wrap=True)
+    t.add_column("Durum", no_wrap=True)
+    t.add_column("Funding", justify="right", no_wrap=True)
+    if wide:
+        t.add_column("24s Hacim", justify="right", no_wrap=True)
+        t.add_column("Ön eğilim", no_wrap=True)
+
+    for rank, (_, r) in enumerate(df.head(limit).iterrows(), start=1):
+        chg = r.get("priceChangePercent")
+        chg_col = "green" if (chg or 0) > 0 else "red"
+        p1h = r.get("price_change_1h")
+        p1h_col = "green" if (p1h or 0) > 0 else "red"
+        bias_col = {"LONG EĞİLİM": "green", "SHORT EĞİLİM": "red"}.get(
+            r.get("bias_label", ""), "yellow")
+        cells = [
+            str(rank), str(r["symbol"]), f"{r.get('lastPrice')}",
+            f"[{chg_col}]{_fmt(chg)}[/{chg_col}]",
+            f"{r.get('interest')}",
+            f"{_fmt(r.get('oi_change_1h'))}",
+            f"[{p1h_col}]{_fmt(p1h)}[/{p1h_col}]",
+            str(r.get("oi_state", "")),
+            f"{_fmt(r.get('funding_pct'), 4)}",
+        ]
+        if wide:
+            vol = r.get("quoteVolume") or 0
+            cells += [f"{vol / 1e6:,.0f}M",
+                      f"[{bias_col}]{r.get('bias_label', '')}[/{bias_col}]"]
+        t.add_row(*cells)
+    console.print(t)
+    if not wide:
+        console.print("[dim]Terminali genişletirseniz hacim ve ön eğilim sütunları "
+                      "da görünür.[/dim]")
+
+
+def cmd_market(args):
+    from pipeline import ranking_table, scan_market
+
+    cfg = get_config()
+    overrides = {}
+    if args.all:
+        overrides["market.min_quote_volume_usdt"] = 0
+        overrides["market.oi_enrich_top"] = 600
+    elif args.min_volume is not None:
+        overrides["market.min_quote_volume_usdt"] = args.min_volume
+    if overrides:
+        cfg = cfg.with_overrides(overrides)
+
+    status = console.status("[cyan]Tüm piyasa taranıyor...[/cyan]")
+    status.start()
+
+    def progress(msg: str):
+        status.update(f"[cyan]{msg}[/cyan]")
+
+    try:
+        result = scan_market(cfg, top_n=args.top, deep=not args.no_deep,
+                             save=not args.no_save, progress=progress)
+    finally:
+        status.stop()
+
+    screened = result["screened"]
+    if screened is None or screened.empty:
+        console.print("[red]Ön eleme sonuç vermedi.[/red]")
+        return
+
+    print_screener(screened, args.list)
+
+    if args.no_deep:
+        console.print("[dim]--no-deep verildiği için derin tarama yapılmadı.[/dim]")
+        return
+
+    snaps = result["snapshots"]
+    if snaps:
+        console.print()
+        print_ranking(ranking_table(snaps))
+        best = snaps[0]
+        console.print(f"\n[bold]En yüksek skor:[/bold] {best['symbol']} — "
+                      f"{best['score']['decision']} "
+                      f"(Long {best['score']['long_score']}/100)")
+        if args.detail:
+            for s in snaps[:args.detail]:
+                print_snapshot(s)
+        else:
+            console.print("[dim]Tek parite detayı için: python run.py scan SEMBOL[/dim]")
+
+
 def cmd_watch(args):
     from scheduler import run_forever
     console.print("[green]Zamanlayıcı başlatılıyor... (Ctrl+C ile durdurun)[/green]")
@@ -433,6 +529,22 @@ def main():
     p.add_argument("--detail", action="store_true", help="Her parite için tam rapor da yazdır")
     p.add_argument("--no-save", action="store_true")
     p.set_defaults(func=cmd_rank)
+
+    p = sub.add_parser("market", help="Binance vadelideki TÜM pariteleri tara")
+    p.add_argument("--top", type=int, default=None,
+                   help="Kaç parite derin taransın (varsayılan: config market.deep_scan_top)")
+    p.add_argument("--list", type=int, default=30,
+                   help="Ön eleme tablosunda kaç satır gösterilsin (varsayılan 30)")
+    p.add_argument("--no-deep", action="store_true",
+                   help="Sadece ön eleme yap, derin tarama yapma (çok hızlı)")
+    p.add_argument("--all", action="store_true",
+                   help="Hacim filtresi olmadan piyasadaki TÜM pariteleri ön ele")
+    p.add_argument("--min-volume", type=float, default=None,
+                   help="24s hacim alt sınırı (USDT). Örn: 1000000")
+    p.add_argument("--detail", type=int, default=0,
+                   help="İlk N parite için tam rapor da yazdır")
+    p.add_argument("--no-save", action="store_true")
+    p.set_defaults(func=cmd_market)
 
     p = sub.add_parser("watch", help="Zamanlayıcıyı başlat (saatlik tarama + alarmlar)")
     p.add_argument("symbols", nargs="*")

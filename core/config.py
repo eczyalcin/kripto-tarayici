@@ -52,6 +52,22 @@ class Config:
     def __getitem__(self, key: str) -> Any:
         return self._data[key]
 
+    def with_overrides(self, overrides: Dict[str, Any]) -> "Config":
+        """Belirli ayarları geçici olarak değiştirilmiş bir kopya döndürür.
+
+        Örn: cfg.with_overrides({"data.agg_trades_pages": 1}) — tüm piyasa
+        taramasında hız için işlem sayfası sayısını düşürmek gibi.
+        """
+        import copy
+        data = copy.deepcopy(self._data)
+        for dotted, value in overrides.items():
+            parts = dotted.split(".")
+            node = data
+            for p in parts[:-1]:
+                node = node.setdefault(p, {})
+            node[parts[-1]] = value
+        return Config(data, self.path)
+
     @property
     def data(self) -> Dict[str, Any]:
         return self._data

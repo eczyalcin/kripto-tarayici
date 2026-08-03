@@ -36,10 +36,13 @@ case "$cmd" in
     sirala|sırala)
         exec "$PY" run.py rank "$@"
         ;;
+    piyasa|tumu|tümü)
+        exec "$PY" run.py market "$@"
+        ;;
     yardim|yardım|-h|--help)
         "$PY" run.py --help
         echo ""
-        echo "Kısayollar: panel · sistem · tara · sirala"
+        echo "Kısayollar: panel · sistem · tara · sirala · piyasa"
         ;;
     *)
         exec "$PY" run.py "$cmd" "$@"

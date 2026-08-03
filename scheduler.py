@@ -66,6 +66,20 @@ def _fast_derivatives(cfg: Config, symbols: List[str]):
             log.warning(f"{sym} hızlı türev kontrolü başarısız: {exc}")
 
 
+def _market_scan(cfg: Config):
+    """Tüm piyasa ön elemesi + öne çıkanların derin taraması."""
+    from pipeline import scan_market
+    log.info("=== Tüm piyasa taraması başlıyor ===")
+    try:
+        result = scan_market(cfg, deep=True, save=True)
+        snaps = result.get("snapshots", [])
+        for r in snaps[:5]:
+            log.info(f"  {r['symbol']}: {r['score']['decision']} "
+                     f"(L{r['score']['long_score']})")
+    except Exception as exc:  # noqa: BLE001
+        log.error(f"Piyasa taraması hatası: {exc}")
+
+
 def _daily_report(cfg: Config, symbols: List[str]):
     from report import daily_report
     log.info("=== Günlük rapor üretiliyor ===")
@@ -97,6 +111,10 @@ def build_scheduler(cfg: Optional[Config] = None,
                       IntervalTrigger(minutes=sch.get("fast_interval_minutes", 5)),
                       args=[cfg, symbols], id="fast_derivatives", max_instances=1,
                       coalesce=True)
+    market_hours = sch.get("market_scan_hours", 0)
+    if market_hours:
+        scheduler.add_job(_market_scan, IntervalTrigger(hours=market_hours),
+                          args=[cfg], id="market_scan", max_instances=1, coalesce=True)
     scheduler.add_job(_daily_report,
                       CronTrigger(hour=sch.get("daily_report_hour", 8),
                                   minute=sch.get("daily_report_minute", 0)),

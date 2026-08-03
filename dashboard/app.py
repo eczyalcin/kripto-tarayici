@@ -173,7 +173,8 @@ _kpi(k[4], "Balina deltası", fmt(whale.get("total_whale_delta_usdt"), 0),
 _kpi(k[5], "Risk", risk.get("level", "—"), f"{risk.get('points')} risk puanı")
 
 tabs = st.tabs(["🎯 Karar", "📈 Trend", "🧠 Smart Money", "⚙️ Türev",
-                "💧 Order Flow", "🐋 Balina & Kitap", "🔔 Alarmlar", "🏆 Sıralama"])
+                "💧 Order Flow", "🐋 Balina & Kitap", "🔔 Alarmlar", "🏆 Sıralama",
+                "🌍 Tüm Piyasa"])
 
 # ------------------------------------------------------------------ 1) Karar
 with tabs[0]:
@@ -655,6 +656,74 @@ with tabs[7]:
         st.plotly_chart(fig)
     else:
         st.caption("Henüz tarama yok — soldaki **Tümü** düğmesine basın.")
+
+# ----------------------------------------------------------- 9) Tüm Piyasa
+with tabs[8]:
+    st.subheader("Binance Vadeli — Tüm Piyasa Ön Elemesi")
+    st.caption("Piyasadaki tüm sürekli pariteler ucuz toplu veriyle taranır "
+               "(fiyat, hacim, funding, Open Interest). 'Dikkat' skoru yön değil, "
+               "hareketlilik ölçer — bakmaya değer mi sorusunu yanıtlar.")
+
+    c1, c2, c3 = st.columns([1, 1, 2])
+    only_screen = c1.button("🔍 Ön eleme (~40 sn)", width="stretch")
+    full_scan = c2.button("🚀 Ön eleme + derin tarama", width="stretch")
+
+    if only_screen or full_scan:
+        from pipeline import scan_market
+        box = st.empty()
+        with st.spinner("Tüm piyasa taranıyor..."):
+            scan_market(cfg, deep=bool(full_scan),
+                        progress=lambda m: box.caption(m))
+        box.empty()
+        st.cache_data.clear()
+        st.rerun()
+
+    scr = storage.latest_screening()
+    if not scr:
+        st.info("Henüz piyasa taraması yapılmadı. Yukarıdaki düğmeye basın veya "
+                "terminalde `python run.py market` çalıştırın.")
+    else:
+        st.caption(f"Son piyasa taraması: {scr['ts'][:16].replace('T', ' ')} · "
+                   f"{scr['total']} parite")
+        m = pd.DataFrame(scr["records"])
+
+        f1, f2, f3 = st.columns(3)
+        min_interest = f1.slider("En düşük dikkat skoru", 0, 100, 0, 5)
+        durum_secenek = ["(hepsi)"] + sorted(m["oi_state"].dropna().unique().tolist()) \
+            if "oi_state" in m.columns else ["(hepsi)"]
+        durum = f2.selectbox("OI durumu", durum_secenek)
+        egilim = f3.selectbox("Ön eğilim", ["(hepsi)", "LONG EĞİLİM", "SHORT EĞİLİM", "NÖTR"])
+
+        view = m[m["interest"] >= min_interest] if "interest" in m.columns else m
+        if durum != "(hepsi)":
+            view = view[view["oi_state"] == durum]
+        if egilim != "(hepsi)":
+            view = view[view["bias_label"] == egilim]
+
+        show = view.rename(columns={
+            "symbol": "Parite", "lastPrice": "Fiyat",
+            "priceChangePercent": "24s %", "quoteVolume": "24s Hacim",
+            "funding_pct": "Funding %", "oi_usdt": "OI (USDT)",
+            "oi_change_1h": "OI 1s %", "oi_change_4h": "OI 4s %",
+            "price_change_1h": "Fiyat 1s %", "oi_state": "OI Durumu",
+            "interest": "Dikkat", "bias_label": "Ön eğilim"})
+        drop = [c for c in ("oi", "bias", "markPrice", "indexPrice") if c in show.columns]
+        st.dataframe(show.drop(columns=drop), width="stretch", height=520)
+        st.caption(f"{len(view)} parite gösteriliyor")
+
+        if "interest" in m.columns and len(m) > 1:
+            top = m.nlargest(20, "interest")
+            fig = go.Figure(go.Bar(
+                x=top["interest"], y=top["symbol"], orientation="h",
+                marker_color=["#43a047" if b == "LONG EĞİLİM" else
+                              "#e53935" if b == "SHORT EĞİLİM" else "#9e9e9e"
+                              for b in top.get("bias_label", [""] * len(top))],
+                text=[f"{v:.0f}" for v in top["interest"]], textposition="outside"))
+            fig.update_layout(height=520, margin=dict(l=10, r=10, t=10, b=10),
+                              xaxis_title="Dikkat skoru",
+                              yaxis=dict(autorange="reversed"),
+                              title="En dikkat çekici 20 parite (renk = ön eğilim)")
+            st.plotly_chart(fig)
 
 st.caption("Bu panel otomatik üretilmiş veri özetidir, yatırım tavsiyesi değildir. "
            "Veri kaynağı: Binance halka açık market-data API'leri.")

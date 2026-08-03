@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS whale_trades (
 );
 CREATE INDEX IF NOT EXISTS idx_whale_symbol_ts ON whale_trades(symbol, ts);
 
+CREATE TABLE IF NOT EXISTS screenings (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT NOT NULL,
+    total   INTEGER,
+    payload TEXT NOT NULL        -- ön eleme tablosunun tamamı (JSON)
+);
+CREATE INDEX IF NOT EXISTS idx_screening_ts ON screenings(ts);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol   TEXT NOT NULL,
@@ -222,6 +230,25 @@ class Storage:
             (symbol, ts, notional),
         ).fetchone()
         return row is not None
+
+    # ------------------------------------------------------- piyasa ön eleme
+    def save_screening(self, records: List[Dict[str, Any]]):
+        conn = self.connect()
+        conn.execute(
+            "INSERT INTO screenings(ts, total, payload) VALUES(?,?,?)",
+            (iso(), len(records), json.dumps(records, default=str, ensure_ascii=False)),
+        )
+        conn.commit()
+
+    def latest_screening(self) -> Optional[Dict[str, Any]]:
+        conn = self.connect()
+        row = conn.execute(
+            "SELECT ts, total, payload FROM screenings ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        return {"ts": row["ts"], "total": row["total"],
+                "records": json.loads(row["payload"])}
 
     # -------------------------------------------------------------- alarmlar
     def last_alert_time(self, symbol: str, rule: str) -> Optional[datetime]:

@@ -31,6 +31,8 @@ data:
   cache_ttl_seconds: 20     # aynı isteğin tekrar çekilmesini engelleyen bellek önbelleği
   request_timeout: 15
   max_retries: 3
+  weight_limit_per_minute: 2400   # Binance vadeli IP limiti
+  weight_pause_at: 0.80           # limitin %80'ine gelince kendiliğinden bekle
 
 # ------------------------------------------------------------
 # Trend Engine
@@ -163,11 +165,35 @@ alerts:
     email: false                # .env içinde SMTP_* değişkenleri gerekir
 
 # ------------------------------------------------------------
+# Tüm Piyasa Taraması (Market Screener)
+# `python run.py market` komutu bu ayarları kullanır.
+#
+# Binance vadelide ~530 USDT sürekli paritesi var. Hepsini 9 motorla taramak
+# on binlerce istek demek; bu yüzden iki aşama:
+#   1) Ön eleme: tüm piyasa, ucuz toplu veri (fiyat, hacim, funding, OI)
+#   2) Derin tarama: sadece öne çıkan pariteler tam motor hattından geçer
+# ------------------------------------------------------------
+market:
+  quote_asset: USDT
+  # 24s hacmi bunun altındaki pariteler elenir. Referans (530 paritelik piyasada):
+  #   1M → 408 parite · 5M → 160 · 10M → 106 · 20M → 67
+  # 0 yazarsanız veya `--all` verirseniz hiç eleme yapılmaz.
+  min_quote_volume_usdt: 3000000
+  oi_enrich_top: 250                # OI verisi çekilecek parite sayısı (hacim sırasıyla)
+  oi_workers: 4                     # paralel istek sayısı (artırmak IP yasağı riski)
+  deep_scan_top: 20                 # tam taramaya girecek parite sayısı
+  always_include_watchlist: true    # config'teki `symbols` her zaman derin taransın
+  extreme_funding_pct: 0.05         # dikkat skorunda "aşırı funding" eşiği (%)
+  deep_scan_agg_pages: 1            # derin taramada agg-trade sayfası (hız için düşük)
+  exclude: []                       # taranmayacak pariteler, ör: [BTCDOMUSDT]
+
+# ------------------------------------------------------------
 # Zamanlayıcı
 # ------------------------------------------------------------
 scheduler:
-  scan_interval_minutes: 60     # tam tarama periyodu ("her saat")
+  scan_interval_minutes: 60     # izleme listesi tam tarama periyodu ("her saat")
   fast_interval_minutes: 5      # türev verisi hızlı yenileme periyodu
+  market_scan_hours: 4          # tüm piyasa taraması periyodu (0 = kapalı)
   daily_report_hour: 8
   daily_report_minute: 0
   collect_liquidations: true    # websocket ile likidasyon toplayıcı

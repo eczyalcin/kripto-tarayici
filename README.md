@@ -52,10 +52,11 @@ cd "/Users/yalcinbakir/claude codes/kripto tarayacısı"
 | Kısa komut | Karşılığı |
 |---|---|
 | `./kripto tara [SEMBOL]` | Tek parite taraması |
+| `./kripto piyasa` | Binance vadelideki **tüm** pariteleri tara |
 | `./kripto panel` | Paneli aç |
 | `./kripto panel --lan` | Paneli telefon/diğer bilgisayarlara aç |
 | `./kripto sistem` | Toplayıcı + zamanlayıcı + panel birlikte |
-| `./kripto sirala` | Tüm pariteleri skorla ve sırala |
+| `./kripto sirala` | İzleme listesini skorla ve sırala |
 | `./kripto check` | Bağlantı testi |
 
 Her yerden sadece `kripto` yazabilmek için (bir kez çalıştırın, sonra yeni terminal açın):
@@ -87,6 +88,87 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `run.py check` | Tüm Binance uç noktalarını ve spot eşleşmesini test eder |
 
 `./sistem-baslat.sh` üçünü birden çalıştırır; Ctrl+C hepsini kapatır.
+
+---
+
+## Tüm piyasa taraması
+
+Binance vadelide **530 USDT sürekli paritesi** var. Hepsini 9 motorla taramak sembol
+başına ~15 istek, toplam ~8.000 istek demek — Binance dakikada 2400 ağırlık verdiği için
+bu yaklaşık 20 dakika sürer ve IP yasağı riski taşır. Bu yüzden tarama iki aşamalı:
+
+**1. Ön eleme — tüm piyasa, saniyeler içinde**
+
+Toplu uç noktalar tek istekte bütün sembolleri döndürür:
+
+| Uç nokta | Ağırlık | Ne verir |
+|---|---:|---|
+| `/fapi/v1/ticker/24hr` | 40 | 530 paritenin fiyatı, 24s değişimi, hacmi |
+| `/fapi/v1/premiumIndex` | 10 | 530 paritenin funding oranı |
+| `/futures/data/openInterestHist` | 1 (sembol başına) | OI **ve** fiyat değişimi birlikte |
+
+Her parite için **dikkat skoru** (0-100) üretilir. Bu skor yön değil *hareketlilik*
+ölçer — "şu an bakmaya değer mi?" sorusunu yanıtlar: fiyat hareketi, OI değişimi,
+funding aşırılığı, likidite ve OI/fiyat uyumsuzluğu. Ayrıca ucuz veriden bir **ön
+eğilim** (LONG/SHORT/NÖTR) çıkarılır.
+
+**2. Derin tarama — sadece öne çıkanlar**
+
+Dikkat skoru en yüksek N parite (varsayılan 20) + izleme listeniz, tam 9 motorlu
+hattan geçer ve gerçek Long/Short skorunu alır.
+
+### Komutlar
+
+```bash
+./kripto piyasa
+```
+
+Ön eleme + en dikkat çekici 20 paritenin derin taraması.
+
+```bash
+./kripto piyasa --no-deep
+```
+
+Sadece ön eleme — bütün piyasaya ~16 saniyede göz atmak için.
+
+```bash
+./kripto piyasa --all --no-deep
+```
+
+Hacim filtresi olmadan **530 paritenin tamamı** (~40 saniye).
+
+```bash
+./kripto piyasa --top 40 --list 60
+```
+
+40 pariteyi derin tara, ön eleme tablosunda 60 satır göster.
+
+### Ölçülen süreler
+
+| Kapsam | Parite | Süre |
+|---|---:|---:|
+| Ön eleme (varsayılan 3M hacim filtresi) | 206 | ~16 sn |
+| Ön eleme (`--all`, filtresiz) | 530 | ~41 sn |
+| Ön eleme + 20 parite derin tarama | 530 → 20 | ~3 dk |
+
+### Ayarlar (`config.yaml` → `market`)
+
+```yaml
+market:
+  min_quote_volume_usdt: 3000000   # 1M→408 parite · 5M→160 · 10M→106 · 20M→67
+  oi_enrich_top: 250               # kaç parite için OI verisi çekilsin
+  deep_scan_top: 20                # kaç parite tam taransın
+  always_include_watchlist: true   # `symbols` listeniz her zaman derin taransın
+```
+
+Zamanlayıcı (`./kripto sistem`) bu taramayı 4 saatte bir kendiliğinden yapar
+(`scheduler.market_scan_hours`, 0 yazarsanız kapanır).
+
+Panelde **🌍 Tüm Piyasa** sekmesinden sonucu filtreleyerek görebilir, düğmeyle yeniden
+tarayabilirsiniz.
+
+> Binance ağırlık limitini istemci kendisi takip eder: limitin %80'ine gelindiğinde
+> dakika penceresi dolana kadar otomatik bekler, böylece IP yasağı riski oluşmaz.
 
 ---
 

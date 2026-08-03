@@ -65,6 +65,31 @@ class BinanceClient:
         self.session.headers.update({"User-Agent": "crypto-intel-dashboard/1.0"})
         self._exchange_info: Optional[Dict[str, Any]] = None
         self._spot_symbols: Optional[set] = None
+        # Binance dakikalık ağırlık limiti (vadeli: 2400). Tüm piyasa taramasında
+        # limite yaklaşınca kendiliğinden yavaşlarız ki IP yasağı yemeyelim.
+        self.weight_limit = self.cfg.get("data.weight_limit_per_minute", 2400)
+        self.weight_pause_at = self.cfg.get("data.weight_pause_at", 0.80)
+        self.used_weight = 0
+        self._weight_lock = threading.Lock()
+
+    # ------------------------------------------------------------ rate limit
+    def _note_weight(self, resp: requests.Response):
+        raw = resp.headers.get("x-mbx-used-weight-1m")
+        if raw is None:
+            return
+        try:
+            used = int(raw)
+        except ValueError:
+            return
+        with self._weight_lock:
+            self.used_weight = used
+        threshold = self.weight_limit * self.weight_pause_at
+        if used >= threshold:
+            # Dakika penceresinin dolmasını bekle
+            wait = 60 - (time.time() % 60) + 1
+            log.warning(f"Ağırlık limitine yaklaşıldı ({used}/{self.weight_limit}) — "
+                        f"{wait:.0f}s bekleniyor")
+            time.sleep(wait)
 
     # ------------------------------------------------------------------ core
     def _request(self, base: str, path: str, params: Optional[dict] = None,
@@ -88,6 +113,7 @@ class BinanceClient:
                     continue
                 if resp.status_code >= 400:
                     raise BinanceError(f"{resp.status_code} {path}: {resp.text[:200]}")
+                self._note_weight(resp)
                 data = resp.json()
                 if cache:
                     self.cache.set(key, data)
@@ -136,6 +162,42 @@ class BinanceClient:
             if s["symbol"] == symbol:
                 return s
         return {}
+
+    # ------------------------------------------------------- tüm piyasa (bulk)
+    def perpetual_symbols(self, quote: str = "USDT") -> List[str]:
+        """Binance vadelide işlem gören tüm sürekli (perpetual) pariteler."""
+        if self._exchange_info is None:
+            self._exchange_info = self._fut("/fapi/v1/exchangeInfo")
+        out = []
+        for s in self._exchange_info.get("symbols", []):
+            if (s.get("contractType") == "PERPETUAL"
+                    and s.get("status") == "TRADING"
+                    and s.get("quoteAsset") == quote):
+                out.append(s["symbol"])
+        return sorted(out)
+
+    def all_tickers_24h(self) -> pd.DataFrame:
+        """Tek istekte tüm sembollerin 24s özeti (ağırlık 40)."""
+        raw = self._fut("/fapi/v1/ticker/24hr")
+        if not raw:
+            return pd.DataFrame()
+        df = pd.DataFrame(raw)
+        for c in ("lastPrice", "priceChangePercent", "quoteVolume", "volume",
+                  "highPrice", "lowPrice", "openPrice", "weightedAvgPrice", "count"):
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+        return df
+
+    def all_premium_index(self) -> pd.DataFrame:
+        """Tek istekte tüm sembollerin funding/mark verisi (ağırlık 10)."""
+        raw = self._fut("/fapi/v1/premiumIndex")
+        if not raw:
+            return pd.DataFrame()
+        df = pd.DataFrame(raw)
+        for c in ("markPrice", "indexPrice", "lastFundingRate", "interestRate"):
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+        return df
 
     def tick_size(self, symbol: str) -> float:
         info = self.exchange_info(symbol)

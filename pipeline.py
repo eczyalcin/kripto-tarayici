@@ -148,6 +148,66 @@ def scan_all(symbols: Optional[List[str]] = None, cfg: Optional[Config] = None,
     return sorted(results, key=lambda s: s["score"]["long_score"], reverse=True)
 
 
+def scan_market(cfg: Optional[Config] = None, top_n: Optional[int] = None,
+                deep: bool = True, save: bool = True,
+                progress=None) -> Dict[str, Any]:
+    """Binance vadelideki TÜM pariteleri tarar.
+
+    1. Ön eleme: tüm piyasa ucuz toplu veriyle elenir (screener)
+    2. Derin tarama: öne çıkan pariteler 9 motorlu hattan geçer
+
+    Dönüş: {"screened": DataFrame, "snapshots": [...], "candidates": [...]}
+    """
+    import pandas as pd
+
+    from engines.screener import pick_candidates, screen_market
+
+    cfg = cfg or get_config()
+    client = get_client(cfg)
+    storage = get_storage()
+
+    t0 = time.time()
+    screened = screen_market(client, cfg, progress=progress)
+    if screened.empty:
+        log.error("Ön eleme boş döndü")
+        return {"screened": screened, "snapshots": [], "candidates": []}
+
+    log.info(f"Ön eleme tamamlandı: {len(screened)} parite "
+             f"[{round(time.time() - t0, 1)}s]")
+
+    if save:
+        try:
+            storage.save_screening(screened.to_dict("records"))
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"Ön eleme kaydedilemedi: {exc}")
+
+    if not deep:
+        return {"screened": screened, "snapshots": [], "candidates": []}
+
+    candidates = pick_candidates(screened, cfg, top_n)
+    log.info(f"Derin tarama listesi ({len(candidates)}): {', '.join(candidates)}")
+
+    # Derin taramada işlem akışı sayfasını düşürüyoruz: 20 parite x 3 sayfa
+    # agg-trade dakikalık ağırlık limitini zorlardı.
+    pages = cfg.get("market.deep_scan_agg_pages", 1)
+    deep_cfg = cfg.with_overrides({"data.agg_trades_pages": pages})
+
+    snapshots: List[Dict[str, Any]] = []
+    for i, sym in enumerate(candidates, start=1):
+        if progress:
+            progress(f"Derin tarama {i}/{len(candidates)}: {sym}")
+        try:
+            snapshots.append(scan_symbol(sym, deep_cfg, client, storage, save=save))
+        except Exception as exc:  # noqa: BLE001
+            log.error(f"{sym} derin tarama hatası: {exc}")
+
+    snapshots.sort(key=lambda s: s["score"]["long_score"], reverse=True)
+    log.info(f"Tüm piyasa taraması bitti — {len(snapshots)} parite derin tarandı "
+             f"[toplam {round(time.time() - t0, 1)}s]")
+
+    return {"screened": screened, "snapshots": snapshots, "candidates": candidates}
+
+
 def ranking_table(snapshots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Nihai hedefteki sıralama tablosu."""
     rows: List[Dict[str, Any]] = []
