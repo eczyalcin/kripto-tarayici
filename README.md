@@ -26,37 +26,55 @@ Crypto Intelligence Dashboard
 
 ## Hızlı Başlangıç
 
+### En kısa yol: çift tıkla
+
+Finder'da proje klasörünü açıp çift tıklayın:
+
+| Dosya | Ne yapar |
+|---|---|
+| **Sistemi-Baslat.command** | Toplayıcı + zamanlayıcı + paneli birlikte başlatır (asıl kullanım) |
+| **Panel-Ac.command** | Sadece paneli açar |
+| **Tarama-Yap.command** | Tek tarama yapıp sonucu gösterir |
+
+> İlk çift tıklamada macOS "geliştirici doğrulanamadı" diyebilir: dosyaya sağ tıklayıp
+> **Aç** deyin, bir kez onayladıktan sonra bir daha sormaz.
+
+### Terminalden: `./kripto`
+
 ```bash
 cd "/Users/yalcinbakir/claude codes/kripto tarayacısı"
 ```
 
-Kurulum zaten yapıldı (`.venv` klasörü hazır). Sıfırdan kurmak gerekirse:
+```bash
+./kripto tara
+```
+
+| Kısa komut | Karşılığı |
+|---|---|
+| `./kripto tara [SEMBOL]` | Tek parite taraması |
+| `./kripto panel` | Paneli aç |
+| `./kripto panel --lan` | Paneli telefon/diğer bilgisayarlara aç |
+| `./kripto sistem` | Toplayıcı + zamanlayıcı + panel birlikte |
+| `./kripto sirala` | Tüm pariteleri skorla ve sırala |
+| `./kripto check` | Bağlantı testi |
+
+Her yerden sadece `kripto` yazabilmek için (bir kez çalıştırın, sonra yeni terminal açın):
+
+```bash
+echo "alias kripto='\"/Users/yalcinbakir/claude codes/kripto tarayacısı/kripto\"'" >> ~/.zshrc
+```
+
+Ardından hangi klasörde olursanız olun `kripto tara`, `kripto panel --lan` çalışır.
+
+Sıfırdan kurulum gerekirse:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
-Veri kaynaklarını test edin:
-
-```bash
-.venv/bin/python run.py check
-```
-
-İlk taramayı çalıştırın:
-
-```bash
-.venv/bin/python run.py scan 1000SHIBUSDT
-```
-
-Arayüzü açın:
-
-```bash
-.venv/bin/python run.py serve
-```
-
 ---
 
-## Komutlar
+## Komutların tamamı
 
 | Komut | Açıklama |
 |---|---|
@@ -65,18 +83,100 @@ Arayüzü açın:
 | `run.py watch` | Zamanlayıcıyı başlatır: saatlik tam tarama + 5 dk türev kontrolü + alarmlar |
 | `run.py collect` | Likidasyon WebSocket toplayıcısı (ayrı terminalde sürekli çalışmalı) |
 | `run.py report` | Günlük raporu üretir (`reports/` klasörüne Markdown olarak yazar) |
-| `run.py serve` | Streamlit arayüzünü açar (varsayılan http://localhost:8501) |
+| `run.py serve [--lan] [--port N]` | Streamlit arayüzünü açar (varsayılan http://localhost:8501) |
 | `run.py check` | Tüm Binance uç noktalarını ve spot eşleşmesini test eder |
 
-Sürekli çalıştırma için iki terminal:
+`./sistem-baslat.sh` üçünü birden çalıştırır; Ctrl+C hepsini kapatır.
+
+---
+
+## Telefondan ve diğer bilgisayarlardan erişim
+
+### A) Aynı Wi-Fi ağındayken (en kolay, ücretsiz)
+
+Mac'te paneli ağa açın:
 
 ```bash
-.venv/bin/python run.py collect
+./kripto panel --lan
+```
+
+Komut ekrana şuna benzer bir adres yazar — telefonunuzun veya Windows PC'nizin
+tarayıcısına bu adresi girin:
+
+```
+http://192.168.1.103:8501
+```
+
+iPhone'da Safari → Paylaş → **Ana Ekrana Ekle** derseniz uygulama gibi açılır.
+
+Bilinmesi gerekenler: Mac açık ve uyanık olmalı (Sistem Ayarları → Kilit Ekranı →
+"ekran kapalıyken otomatik uyku" kapatılabilir), IP adresi router yeniden başlayınca
+değişebilir, ve panel yerel ağdaki herkese açıktır — bu yüzden parola koyun:
+
+```bash
+cp .env.example .env
+```
+
+`.env` içindeki `DASHBOARD_PASSWORD=` satırına bir parola yazın. Panel açılışta
+parola sorar.
+
+### B) Ev dışındayken — Tailscale (önerilen)
+
+Ücretsiz, kurulumu birkaç dakika, port yönlendirme veya sabit IP gerekmez. Cihazlarınız
+arasında şifreli özel bir ağ kurar; panel internete açılmaz.
+
+1. [tailscale.com](https://tailscale.com) → ücretsiz hesap
+2. Mac'e, telefona ve Windows PC'lere Tailscale uygulamasını kurup aynı hesapla girin
+3. Mac'te `./kripto panel --lan` çalıştırın
+4. Tailscale'in Mac'e verdiği adresi kullanın: `http://100.x.x.x:8501`
+
+Artık dünyanın neresinde olursanız olun panele erişirsiniz.
+
+### C) Windows PC'de programın kendisini çalıştırmak
+
+Panel yerine programın tamamını Windows'ta çalıştırmak isterseniz — Mac'e hiç bağlı
+olmadan, kendi taramasını yapar:
+
+1. [python.org/downloads](https://www.python.org/downloads/) → Python 3.11+ kurun.
+   Kurulumda **"Add python.exe to PATH"** kutusunu işaretleyin.
+2. Projeyi Windows'a kopyalayın (GitHub bölümüne bakın)
+3. `windows\kurulum.bat` dosyasına çift tıklayın — sanal ortamı kurar, paketleri
+   indirir, bağlantı testi yapar
+4. Sonrasında: `windows\Sistemi-Baslat.bat` · `windows\Panel-Ac.bat` ·
+   `windows\Tarama-Yap.bat`
+
+Veritabanı her makinede ayrıdır; Windows PC kendi taramalarını kendi `data/market.db`
+dosyasına yazar.
+
+---
+
+## GitHub ile senkronizasyon
+
+Kod tek yerde dursun, Windows PC'lere ve ileride başka makinelere kolayca gitsin diye
+proje git deposu olarak hazırlandı (ilk commit atıldı). `.gitignore` sayesinde `.env`,
+`.venv/`, veritabanı ve loglar depoya **girmez**.
+
+GitHub'da **private** bir repo açın, sonra:
+
+```bash
+git remote add origin https://github.com/KULLANICI_ADIN/kripto-tarayici.git
 ```
 
 ```bash
-.venv/bin/python run.py watch
+git branch -M main && git push -u origin main
 ```
+
+Windows PC'de:
+
+```bash
+git clone https://github.com/KULLANICI_ADIN/kripto-tarayici.git
+```
+
+Sonra `windows\kurulum.bat`. Değişiklik yaptığınızda Mac'te `git push`, Windows'ta
+`git pull` yeterli.
+
+> Repoyu **private** açın. Kod gizli bilgi içermiyor (API anahtarı kullanılmıyor) ama
+> ayarlarınız, izlediğiniz pariteler ve stratejik eşikleriniz herkese açık olmasın.
 
 ---
 

@@ -44,7 +44,12 @@
       "Bash(./kripto yardim *)",
       "Bash(./kripto panel *)",
       "Bash(curl -s -o /dev/null -w \"localhost  HTTP %{http_code}\\\\n\" -m 25 --retry 5 --retry-delay 2 --retry-all-errors http://127.0.0.1:8558/)",
-      "Bash(curl -s -o /dev/null -w \"LAN IP    HTTP %{http_code}\\\\n\" -m 15 http://192.168.1.103:8558/)"
+      "Bash(curl -s -o /dev/null -w \"LAN IP    HTTP %{http_code}\\\\n\" -m 15 http://192.168.1.103:8558/)",
+      "Bash(bash -n sistem-baslat.sh)",
+      "Bash(bash -n kripto)",
+      "Bash(./kripto tara *)",
+      "Bash(git add *)",
+      "Bash(git -c user.name=yalcinbakir -c user.email=yalcinbakir@protonmail.com commit -q -m 'Kısa çalıştırıcılar, LAN erişimi, panel parolası ve Windows desteği *)"
     ]
   }
 }
