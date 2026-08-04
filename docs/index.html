@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Kripto Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Binance vadeli piyasa istihbarat paneli — veri odaklı karar desteği">
+<meta name="theme-color" content="#0e1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kripto">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">📊</span>
+    <div>
+      <div class="brand-title">Kripto Panel</div>
+      <div class="brand-sub" id="lastScan">henüz tarama yok</div>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <select id="symbolSelect" aria-label="Parite"></select>
+    <button id="scanBtn" class="btn primary">Tara</button>
+  </div>
+</header>
+
+<div id="progress" class="progress hidden">
+  <div class="progress-bar"><div class="progress-fill"></div></div>
+  <div class="progress-text" id="progressText">Hazırlanıyor...</div>
+</div>
+
+<div id="errorBox" class="error-box hidden"></div>
+
+<main id="main">
+  <section id="headline" class="headline empty-state">
+    <h2>Hoş geldin</h2>
+    <p>Yukarıdan bir parite seç ve <b>Tara</b> düğmesine bas. Veriler doğrudan
+       Binance'den bu cihaza gelir; arada sunucu yoktur.</p>
+    <p class="muted">İlk tarama yaklaşık 10-20 saniye sürer.</p>
+  </section>
+
+  <div id="kpis" class="kpi-grid"></div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="karar">🎯 Karar</button>
+    <button class="tab" data-tab="trend">📈 Trend</button>
+    <button class="tab" data-tab="smart">🧠 Smart Money</button>
+    <button class="tab" data-tab="turev">⚙️ Türev</button>
+    <button class="tab" data-tab="akis">💧 Order Flow</button>
+    <button class="tab" data-tab="balina">🐋 Balina &amp; Kitap</button>
+    <button class="tab" data-tab="siralama">🏆 Sıralama</button>
+    <button class="tab" data-tab="piyasa">🌍 Tüm Piyasa</button>
+    <button class="tab" data-tab="ayarlar">⚙︎ Ayarlar</button>
+  </nav>
+
+  <section class="panel active" id="tab-karar"></section>
+  <section class="panel" id="tab-trend"></section>
+  <section class="panel" id="tab-smart"></section>
+  <section class="panel" id="tab-turev"></section>
+  <section class="panel" id="tab-akis"></section>
+  <section class="panel" id="tab-balina"></section>
+  <section class="panel" id="tab-siralama"></section>
+  <section class="panel" id="tab-piyasa"></section>
+  <section class="panel" id="tab-ayarlar"></section>
+</main>
+
+<footer class="foot">
+  Veri kaynağı: Binance halka açık market-data API'leri · API anahtarı kullanılmaz,
+  sadece okuma yapılır.<br>
+  Bu panel otomatik üretilmiş veri özetidir, <b>yatırım tavsiyesi değildir</b>.
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
