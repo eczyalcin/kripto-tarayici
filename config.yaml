@@ -191,6 +191,7 @@ market:
 # Zamanlayıcı
 # ------------------------------------------------------------
 scheduler:
+  timezone: Europe/Istanbul     # günlük rapor saati bu saat dilimine göre hesaplanır
   scan_interval_minutes: 60     # izleme listesi tam tarama periyodu ("her saat")
   fast_interval_minutes: 5      # türev verisi hızlı yenileme periyodu
   market_scan_hours: 4          # tüm piyasa taraması periyodu (0 = kapalı)

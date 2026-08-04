@@ -19,8 +19,35 @@ from core.config import get_config               # noqa: E402
 from core.indicators import enrich               # noqa: E402
 from core.storage import get_storage             # noqa: E402
 
-st.set_page_config(page_title="Crypto Intelligence Dashboard", page_icon="📊",
-                   layout="wide", initial_sidebar_state="expanded")
+# page_title ana ekrana eklendiğinde simgenin altındaki yazı olur — kısa tutuluyor.
+# initial_sidebar_state="auto": geniş ekranda açık, telefonda kapalı başlar.
+st.set_page_config(page_title="Kripto Panel", page_icon="📊",
+                   layout="wide", initial_sidebar_state="auto")
+
+# ------------------------------------------------------------ mobil uyarlama
+st.markdown("""
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kripto">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  /* Telefon: başlıkları küçült, boşlukları daralt, tablolara nefes aldır */
+  @media (max-width: 640px) {
+      .block-container { padding: 0.6rem 0.7rem 3rem 0.7rem !important; }
+      h2 { font-size: 1.25rem !important; }
+      h3 { font-size: 1.0rem !important; line-height: 1.35 !important; }
+      .stTabs [data-baseweb="tab"] { padding: 6px 8px !important; font-size: 0.8rem; }
+      [data-testid="stMetricValue"] { font-size: 1.15rem !important; }
+      [data-testid="stMetricLabel"] { font-size: 0.72rem !important; }
+      .stDataFrame { font-size: 0.75rem; }
+  }
+  /* Sekme çubuğu telefonda yatay kaydırılabilsin */
+  .stTabs [data-baseweb="tab-list"] {
+      overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none;
+  }
+  .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ------------------------------------------------------- parola koruması
@@ -149,28 +176,64 @@ st.markdown(
     unsafe_allow_html=True)
 st.write("")
 
-k = st.columns(6)
 oi = deriv.get("open_interest", {})
 f = deriv.get("funding", {})
-# Alt etiketler yön bilgisidir; st.metric'in delta oku yanıltıcı olacağı için
-# değer ve durum ayrı ayrı gösterilir.
-def _kpi(col, label: str, value: str, state: str):
-    col.metric(label, value)
-    col.caption(state or "—")
 
 
-_kpi(k[0], "Open Interest (1s)", f"%{fmt(oi.get('change_1h_pct'))}",
-     oi.get("interpretation_1h", {}).get("state", ""))
-_kpi(k[1], "Funding", f"%{fmt(f.get('current_pct'), 4)}", f.get("health", ""))
-_kpi(k[2], "Vadeli CVD", fmt(flow.get("futures", {}).get("delta"), 0),
-     flow.get("label", ""))
-_kpi(k[3], "Spot CVD",
+def kpi_grid(items):
+    """Responsive gösterge ızgarası.
+
+    st.columns kullanılmıyor: telefonda 6 sütun alt alta dizilip sayfayı
+    uzatıyordu. CSS grid geniş ekranda 6, telefonda 2 sütun gösterir.
+    Alt etiketler yön bilgisi olduğu için st.metric'in yanıltıcı yeşil
+    oku da böylece devre dışı kalıyor.
+    """
+    cards = []
+    for label, value, state, tone in items:
+        color = {"up": "#66bb6a", "down": "#ef5350"}.get(tone, "rgba(255,255,255,.62)")
+        cards.append(
+            f'<div class="kpi"><div class="l">{label}</div>'
+            f'<div class="v">{value}</div>'
+            f'<div class="s" style="color:{color}">{state or "—"}</div></div>')
+    st.markdown(f"""
+<style>
+  /* 132px: geniş ekranda 6 kart yan yana, telefonda 2 sütun olur */
+  .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+               gap:9px; margin:4px 0 14px; }}
+  .kpi {{ background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.09);
+          border-radius:10px; padding:9px 12px; }}
+  .kpi .l {{ font-size:.72rem; opacity:.62; line-height:1.2; }}
+  .kpi .v {{ font-size:1.22rem; font-weight:700; margin:3px 0 1px; }}
+  .kpi .s {{ font-size:.72rem; }}
+</style>
+<div class="kpi-grid">{''.join(cards)}</div>""", unsafe_allow_html=True)
+
+
+def _tone(value, positive_good=True):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return "flat"
+    if value > 0:
+        return "up" if positive_good else "down"
+    if value < 0:
+        return "down" if positive_good else "up"
+    return "flat"
+
+
+kpi_grid([
+    ("Open Interest (1s)", f"%{fmt(oi.get('change_1h_pct'))}",
+     oi.get("interpretation_1h", {}).get("state", ""), "flat"),
+    ("Funding", f"%{fmt(f.get('current_pct'), 4)}", f.get("health", ""), "flat"),
+    ("Vadeli CVD", fmt(flow.get("futures", {}).get("delta"), 0),
+     flow.get("label", ""), _tone(flow.get("futures", {}).get("delta"))),
+    ("Spot CVD",
      fmt(flow.get("spot", {}).get("delta"), 0)
      if flow.get("spot", {}).get("available") else "—",
-     flow.get("divergence", ""))
-_kpi(k[4], "Balina deltası", fmt(whale.get("total_whale_delta_usdt"), 0),
-     whale.get("state", ""))
-_kpi(k[5], "Risk", risk.get("level", "—"), f"{risk.get('points')} risk puanı")
+     flow.get("divergence", ""),
+     _tone(flow.get("spot", {}).get("delta")) if flow.get("spot", {}).get("available") else "flat"),
+    ("Balina deltası", fmt(whale.get("total_whale_delta_usdt"), 0),
+     whale.get("state", ""), _tone(whale.get("total_whale_delta_usdt"))),
+    ("Risk", risk.get("level", "—"), f"{risk.get('points')} risk puanı", "flat"),
+])
 
 tabs = st.tabs(["🎯 Karar", "📈 Trend", "🧠 Smart Money", "⚙️ Türev",
                 "💧 Order Flow", "🐋 Balina & Kitap", "🔔 Alarmlar", "🏆 Sıralama",

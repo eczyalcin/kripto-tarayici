@@ -212,9 +212,29 @@ arasında şifreli özel bir ağ kurar; panel internete açılmaz.
 3. Mac'te `./kripto panel --lan` çalıştırın
 4. Tailscale'in Mac'e verdiği adresi kullanın: `http://100.x.x.x:8501`
 
-Artık dünyanın neresinde olursanız olun panele erişirsiniz.
+Bu adres LAN IP'sinin aksine **değişmez** — telefonunuz mobil veride olsa bile çalışır.
 
-### C) Windows PC'de programın kendisini çalıştırmak
+### C) iPhone'a uygulama gibi kurmak
+
+Panel mobil için uyarlandı: telefonda kenar çubuğu kapalı başlar, göstergeler 2 sütuna
+iner, sekme çubuğu yatay kayar.
+
+1. Safari'de panel adresini açın (Tailscale kullanıyorsanız `100.x.x.x:8501`)
+2. Parolanızı girin
+3. Alttaki **Paylaş** düğmesi → **Ana Ekrana Ekle**
+4. İsim olarak "Kripto" bırakıp **Ekle** deyin
+
+Ana ekranda simgesi oluşur; dokununca adres çubuğu olmadan tam ekran açılır.
+
+> Chrome değil **Safari** kullanın — iOS'ta yalnızca Safari ana ekrana ekleyebiliyor.
+
+### Mac uyursa ne olur?
+
+Panel Mac'te çalıştığı sürece Mac uyuduğunda erişim kesilir. Bu normaldir ve
+engellenmeye çalışılmaz. Kesintisiz erişim istiyorsanız programı Mac'te değil,
+sürekli açık kalan bir yerde çalıştırın — bir sonraki bölüme bakın.
+
+### D) Windows PC'de programın kendisini çalıştırmak
 
 Panel yerine programın tamamını Windows'ta çalıştırmak isterseniz — Mac'e hiç bağlı
 olmadan, kendi taramasını yapar:
@@ -229,6 +249,77 @@ olmadan, kendi taramasını yapar:
 
 Veritabanı her makinede ayrıdır; Windows PC kendi taramalarını kendi `data/market.db`
 dosyasına yazar.
+
+---
+
+## 7/24 çalıştırma (Mac kapalıyken de erişim)
+
+Mac uyuduğunda panel kapanır. Kesintisiz erişim için programı sürekli açık kalan bir
+yerde çalıştırın. Kod tamamen taşınabilir (Python + SQLite), üç seçenek de aynı
+şekilde çalışır. Hangisini seçerseniz seçin Tailscale kurup telefondan her yerden
+erişebilirsiniz.
+
+### Seçenek 1 — Raspberry Pi (aylık gideri yok)
+
+Raspberry Pi 4/5 tek seferlik alım, 3-5 watt çeker, evde prize takılı durur.
+Projeyi Pi'ye kopyaladıktan sonra:
+
+```bash
+bash deploy/kurulum-linux.sh
+```
+
+Betik sanal ortamı kurar, Binance erişimini test eder ve üç systemd servisi
+(`kripto-panel`, `kripto-zamanlayici`, `kripto-toplayici`) tanımlar. Pi yeniden
+başlasa bile servisler kendiliğinden kalkar.
+
+| İşlem | Komut |
+|---|---|
+| Durum | `systemctl status kripto-panel` |
+| Canlı günlük | `journalctl -u kripto-zamanlayici -f` |
+| Durdurma | `sudo systemctl stop kripto-panel` |
+
+### Seçenek 2 — Linux VPS (aylık ~4-5 €, donanım yok)
+
+Hetzner, Contabo veya benzeri bir sağlayıcıdan en küçük paket yeter (1 vCPU / 2 GB).
+Kurulum Seçenek 1 ile aynı betikle yapılır.
+
+> **Bölge seçimi kritik:** Binance ABD merkezli sunucuları engeller (HTTP 451).
+> **Almanya, Finlandiya veya Singapur** seçin. Kurulum betiği başlamadan önce bunu
+> test eder ve engelliyse uyarır.
+
+Satın almadan önce sunucuda kontrol edin:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://fapi.binance.com/fapi/v1/ping
+```
+
+`200` dönerse o bölge uygun.
+
+### Seçenek 3 — Docker (VPS, NAS veya sürekli açık bir PC)
+
+```bash
+docker compose up -d
+```
+
+Üç konteyner başlar (panel, zamanlayıcı, toplayıcı), aynı veritabanını paylaşır ve
+makine yeniden başlayınca `restart: unless-stopped` sayesinde kendiliğinden kalkar.
+`config.yaml` ve `.env` dışarıdan bağlanır — ayar değiştirmek için imajı yeniden
+kurmanız gerekmez.
+
+| İşlem | Komut |
+|---|---|
+| Günlükler | `docker compose logs -f` |
+| Durdurma | `docker compose down` |
+| Kod güncelleyince | `docker compose up -d --build` |
+
+### Karşılaştırma
+
+| | Raspberry Pi | Linux VPS | Sürekli açık PC |
+|---|---|---|---|
+| Aylık gider | Sadece elektrik | ~4-5 € | Elektrik |
+| Tek seferlik alım | Var | Yok | Yok |
+| Binance bölge sorunu | Yok (evde) | Bölge seçimi şart | Yok |
+| Kurulum | `deploy/kurulum-linux.sh` | `deploy/kurulum-linux.sh` | `docker compose up -d` |
 
 ---
 

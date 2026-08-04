@@ -1,0 +1,54 @@
+# 7/24 çalıştırma. Üç servis aynı veritabanını paylaşır:
+#   panel       → Streamlit arayüzü (telefondan bu adrese bağlanırsınız)
+#   zamanlayici → saatlik tarama, piyasa taraması, alarmlar, günlük rapor
+#   toplayici   → likidasyon websocket akışı
+#
+# Başlatma:  docker compose up -d
+# Günlükler: docker compose logs -f
+# Durdurma:  docker compose down
+
+services:
+  panel:
+    build: .
+    image: kripto-tarayici
+    container_name: kripto-panel
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    env_file:
+      - .env
+    command: ["python", "run.py", "serve", "--lan", "--no-browser"]
+
+  zamanlayici:
+    image: kripto-tarayici
+    container_name: kripto-zamanlayici
+    restart: unless-stopped
+    depends_on:
+      - panel
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    env_file:
+      - .env
+    command: ["python", "run.py", "watch"]
+
+  toplayici:
+    image: kripto-tarayici
+    container_name: kripto-toplayici
+    restart: unless-stopped
+    depends_on:
+      - panel
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    command: ["python", "run.py", "collect"]

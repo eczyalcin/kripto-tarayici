@@ -103,7 +103,9 @@ def build_scheduler(cfg: Optional[Config] = None,
     symbols = symbols or cfg.symbols
     sch = cfg.get("scheduler", {})
 
-    scheduler = BackgroundScheduler(timezone="UTC")
+    # Günlük rapor saati yerel saate göre olsun (UTC'de 08:00 Türkiye'de 11:00 demekti)
+    tz = sch.get("timezone") or None
+    scheduler = BackgroundScheduler(timezone=tz) if tz else BackgroundScheduler()
     scheduler.add_job(_full_scan, IntervalTrigger(minutes=sch.get("scan_interval_minutes", 60)),
                       args=[cfg, symbols], id="full_scan", max_instances=1,
                       coalesce=True, next_run_time=None)
