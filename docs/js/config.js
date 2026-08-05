@@ -115,12 +115,16 @@ function deepMerge(base, override) {
   return out;
 }
 
+// structuredClone iOS 15.4 öncesinde yok — JSON ile yedekliyoruz
+const clone = (o) => (typeof structuredClone === 'function'
+  ? structuredClone(o) : JSON.parse(JSON.stringify(o)));
+
 export function loadConfig() {
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? deepMerge(DEFAULTS, JSON.parse(raw)) : structuredClone(DEFAULTS);
+    return raw ? deepMerge(DEFAULTS, JSON.parse(raw)) : clone(DEFAULTS);
   } catch {
-    return structuredClone(DEFAULTS);
+    return clone(DEFAULTS);
   }
 }
 
@@ -134,5 +138,5 @@ export function saveConfig(patch) {
 
 export function resetConfig() {
   localStorage.removeItem(KEY);
-  return structuredClone(DEFAULTS);
+  return clone(DEFAULTS);
 }

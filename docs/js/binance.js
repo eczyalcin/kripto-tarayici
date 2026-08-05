@@ -39,6 +39,11 @@ async function req(base, path, params = {}, { useCache = true, timeout = 20000 }
       if (r.status === 451 || r.status === 403) {
         throw new Error('Binance bu bölgeden erişimi engelliyor (HTTP ' + r.status + ')');
       }
+      // 4xx istemci hatası (geçersiz sembol vb.) tekrar denemekle düzelmez
+      if (r.status >= 400 && r.status < 500) {
+        const detail = r.status === 400 ? 'geçersiz sembol veya parametre' : `HTTP ${r.status}`;
+        throw new Error(`${path.split('/').pop()}: ${detail}`);
+      }
       if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}`);
       const data = await r.json();
       if (useCache) cache.set(url, { t: Date.now(), v: data });
@@ -46,7 +51,8 @@ async function req(base, path, params = {}, { useCache = true, timeout = 20000 }
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
-      if (e.message && e.message.includes('engelliyor')) throw e;
+      // Bölge engeli ve istemci hataları tekrar denenmez
+      if (e.message && (e.message.includes('engelliyor') || e.message.includes('geçersiz sembol'))) throw e;
       await new Promise((res) => setTimeout(res, 600 * (attempt + 1)));
     }
   }

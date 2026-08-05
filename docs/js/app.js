@@ -181,9 +181,18 @@ function renderTrend() {
     };
   });
 
-  let chartHtml = '<div class="empty">Grafik için tarama verisi gerekiyor.</div>';
+  // Uygulama kapatılıp açıldığında snapshot localStorage'dan gelir ve ham mumlar
+  // içinde olmaz (kota nedeniyle saklanmıyor). Bu durumda mumları arka planda
+  // yeniden çekip grafiği tamamlıyoruz — yeniden tarama gerekmesin.
+  let chartHtml = '<div class="empty">Grafik yükleniyor...</div>';
   const candles = snap._candles?.mtf;
   const mtf = t.timeframes.mtf;
+  if (!candles?.length || !mtf?._enriched) {
+    if (!renderTrend._loading) {
+      renderTrend._loading = true;
+      loadCandlesForChart(snap.symbol).finally(() => { renderTrend._loading = false; });
+    }
+  }
   if (candles?.length && mtf?._enriched) {
     const view = candles.slice(-140);
     const off = candles.length - view.length;
@@ -227,6 +236,23 @@ function renderTrend() {
             { html: `<span class="badge ${['HH', 'HL'].includes(p.label) ? 'green' : 'red'}">${p.label}</span>` }],
         })), { empty: 'Swing noktası bulunamadı' })}
     </div>`;
+}
+
+// Önbellekten okunan snapshot için mumları tamamlar (grafik çizilebilsin diye)
+async function loadCandlesForChart(symbol) {
+  try {
+    const [{ klines }, { analyzeTimeframe }] = await Promise.all([
+      import('./binance.js'), import('./engines.js'),
+    ]);
+    const c = await klines(symbol, cfg.timeframes.mtf, cfg.timeframes.klinesLimit);
+    if (!snap || snap.symbol !== symbol) return;
+    snap._candles = { ...(snap._candles || {}), mtf: c };
+    snap.trend.timeframes.mtf = { ...snap.trend.timeframes.mtf, ...analyzeTimeframe(c, cfg.trend) };
+    renderTrend();
+  } catch (e) {
+    const el = $('tab-trend').querySelector('.empty');
+    if (el) el.textContent = 'Grafik yüklenemedi: ' + (e.message || e);
+  }
 }
 
 // ===========================================================================
@@ -445,7 +471,9 @@ function renderBalina() {
                 { empty: 'Iceberg tespit edilmedi' })}</div>
     </div>
     <div class="card"><h3>Order Book Derinliği</h3>
-      ${b.available && b.depthChart ? charts.depthChart(b.depthChart.bids, b.depthChart.asks, { h: 200 }) : ''}
+      ${b.available && b.depthChart
+        ? charts.depthChart(b.depthChart.bids, b.depthChart.asks, { h: 200 })
+        : '<div class="empty">Derinlik grafiği anlık veridir ve saklanmaz — güncel görüntü için yeni tarama yapın. Aşağıdaki değerler son taramaya aittir.</div>'}
       <dl class="kv">
         <dt>Durum</dt><dd>${esc(b.state)}</dd>
         <dt>Yakın denge (±%${b.nearBandPct})</dt><dd class="${tone(b.nearImbalancePct)}">%${fmt(b.nearImbalancePct)}</dd>
@@ -764,6 +792,39 @@ function renderAll() {
   renderAkis(); renderBalina(); renderSiralama(); renderPiyasa(); renderAyarlar();
 }
 
+// Yeni sürüm yayınlandığında telefonun eski sürümde kalmaması için:
+// service worker güncellemeyi bulunca üstte "yenile" şeridi çıkar.
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar();
+      });
+    });
+    // Uygulama her açılışta güncelleme var mı diye bakar
+    setTimeout(() => reg.update().catch(() => {}), 3000);
+  }).catch(() => {});
+}
+
+function showUpdateBar() {
+  if (document.getElementById('updateBar')) return;
+  const bar = document.createElement('div');
+  bar.id = 'updateBar';
+  bar.className = 'update-bar';
+  bar.innerHTML = `<span>Yeni sürüm hazır</span><button class="btn primary" id="reloadBtn">Yenile</button>`;
+  document.body.appendChild(bar);
+  document.getElementById('reloadBtn').addEventListener('click', async () => {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+    location.reload(true);
+  });
+}
+
 function init() {
   fillSymbols();
   document.querySelectorAll('.tab').forEach((t) =>
@@ -783,9 +844,7 @@ function init() {
   const savedTab = localStorage.getItem('kripto.lastTab');
   if (savedTab && document.getElementById(`tab-${savedTab}`)) switchTab(savedTab);
 
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  registerServiceWorker();
 }
 
 init();

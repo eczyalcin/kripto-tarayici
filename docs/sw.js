@@ -2,7 +2,10 @@
 // dokununca anında açılır. Binance verisi ASLA önbelleğe alınmaz; her tarama
 // canlı veri çeker.
 
-const CACHE = 'kripto-v1';
+// Sürüm değişince eski önbellek silinir ve kullanıcıya "yeni sürüm" bildirimi gider.
+// Kod güncellendiğinde bu numarayı artırın.
+const VERSION = '1.0.1';
+const CACHE = `kripto-${VERSION}`;
 const SHELL = [
   './',
   './index.html',

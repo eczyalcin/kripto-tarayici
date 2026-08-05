@@ -190,6 +190,15 @@ td.wrap { white-space: normal; min-width: 180px; }
 
 .foot { padding: 16px 14px 30px; font-size: .72rem; color: var(--muted); text-align: center; border-top: 1px solid var(--line); }
 
+.update-bar {
+  position: fixed; left: 12px; right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px); z-index: 60;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--bg3); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; font-size: .85rem;
+  box-shadow: 0 8px 28px rgba(0,0,0,.4);
+}
+
 @media (max-width: 640px) {
   .headline h2 { font-size: 1.1rem; }
   .card { padding: 11px 12px; }
