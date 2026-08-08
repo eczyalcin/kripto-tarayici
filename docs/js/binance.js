@@ -76,6 +76,12 @@ export async function klines(symbol, interval, limit = 500) {
   return toCandles(await fut('/fapi/v1/klines', { symbol, interval, limit }));
 }
 
+// Belirli bir andan bugüne kadarki mumlar — sinyal günlüğü sonuçları için.
+export async function klinesSince(symbol, interval, startTime, limit = 1000) {
+  return toCandles(await fut('/fapi/v1/klines',
+    { symbol, interval, startTime, limit: Math.min(limit, 1500) }, { useCache: false }));
+}
+
 export async function spotKlines(symbol, interval, limit = 500) {
   return toCandles(await spot('/api/v3/klines', { symbol, interval, limit }));
 }

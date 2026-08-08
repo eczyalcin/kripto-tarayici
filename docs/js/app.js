@@ -2,6 +2,7 @@
 
 import * as charts from './charts.js';
 import { DEFAULTS, loadConfig, resetConfig, saveConfig } from './config.js';
+import * as journal from './journal.js';
 import { pickCandidates, scanMarket, scanSymbol, screenMarket } from './scan.js';
 import * as store from './store.js';
 import { fmt, fmtPrice, fmtUsd, signed, timeAgo } from './util.js';
@@ -27,9 +28,16 @@ function setBusy(on, text = '') {
 
 function showError(msg) {
   const box = $('errorBox');
+  box.className = 'error-box';
   box.innerHTML = `<b>Bir sorun oluştu</b><br>${esc(msg)}`;
-  box.classList.remove('hidden');
   setTimeout(() => box.classList.add('hidden'), 12000);
+}
+
+function showInfo(msg) {
+  const box = $('errorBox');
+  box.className = 'error-box info';
+  box.innerHTML = esc(msg);
+  setTimeout(() => box.classList.add('hidden'), 6000);
 }
 
 function fillSymbols() {
@@ -509,7 +517,168 @@ function renderBalina() {
 }
 
 // ===========================================================================
-// 7) SIRALAMA (izleme listesi)
+// 7) SİNYAL GÜNLÜĞÜ
+// ===========================================================================
+const DURUM_RENK = {
+  'TP1': 'green', 'TP2': 'green', 'TP3': 'green',
+  'STOP': 'red',
+  'STOP': 'red', 'AÇIK': 'yellow', 'BEKLİYOR': 'yellow',
+  'GİRİŞ OLMADI': '', 'ZAMAN AŞIMI': '', 'İPTAL': '',
+};
+
+function renderGunluk() {
+  const el = $('tab-gunluk');
+  const ist = journal.istatistik();
+  const hepsi = journal.tumSinyaller();
+
+  const kartlar = `
+    <div class="card">
+      <h3>Sinyal Günlüğü</h3>
+      <p class="muted" style="font-size:.84rem">Her tarama bir setup ürettiğinde
+        buraya kaydedilir. Sonucu (TP1'e mi ulaştı, stop'a mı) 15 dakikalık mumlardan
+        <b>otomatik ölçülür</b>. Yeterli kayıt birikince sistemin tahmininin gerçekte
+        ne kadar tuttuğunu görürsün.</p>
+      <div class="row-actions">
+        <button class="btn primary" id="gunlukGuncelle">Sonuçları güncelle</button>
+        ${hepsi.length ? '<button class="btn danger" id="gunlukSil">Günlüğü temizle</button>' : ''}
+      </div>
+      <div class="kpi-grid" style="margin-top:12px">
+        <div class="kpi"><div class="l">Toplam sinyal</div><div class="v">${ist.toplam}</div>
+          <div class="s flat">${ist.acik} açık</div></div>
+        <div class="kpi"><div class="l">Sonuçlanan</div><div class="v">${ist.bitmis}</div>
+          <div class="s flat">${ist.girisOlmayan} giriş olmadı${ist.genel.zamanAsimi ? ' · ' + ist.genel.zamanAsimi + ' zaman aşımı' : ''}</div></div>
+        <div class="kpi"><div class="l">Başarı oranı</div>
+          <div class="v">${ist.genel.adet ? '%' + ist.genel.basariOrani.toFixed(0) : '—'}</div>
+          <div class="s flat">TP1'e ulaşan</div></div>
+        <div class="kpi"><div class="l">Ort. en iyi nokta</div>
+          <div class="v">${ist.genel.adet ? ist.genel.ortMfe.toFixed(2) + 'R' : '—'}</div>
+          <div class="s flat">ort. dip ${ist.genel.adet ? ist.genel.ortMae.toFixed(2) + 'R' : '—'}</div></div>
+      </div>
+      ${!ist.yeterliVeri ? `<div class="note">⚠️ Şu an ${ist.bitmis} sonuçlanmış sinyal var.
+        İstatistiğin anlam kazanması için <b>en az 20</b> gerekiyor; 50+ olduğunda
+        bantlara göre kalibrasyon güvenilir hâle gelir.</div>` : ''}
+    </div>`;
+
+  // ---- kalibrasyon: sistemin tahmini vs gerçek
+  const bantRows = ist.bantlar.map((b) => ({
+    cells: [b.ad, String(b.adet),
+      { html: `<b>%${b.basariOrani.toFixed(0)}</b>` },
+      b.tahmin ? `%${b.tahmin.toFixed(0)}` : '—',
+      { html: b.fark == null ? '—' :
+        `<span class="${b.fark >= 0 ? 'up' : 'down'}">${signed(b.fark, 0)} puan</span>` },
+      `%${b.tp2Orani.toFixed(0)}`,
+      b.ortMfe.toFixed(2) + 'R'],
+  }));
+
+  const kalibrasyon = `
+    <div class="card">
+      <h3>Kalibrasyon — tahmin ne kadar tutuyor?</h3>
+      ${table([{ label: 'Skor bandı' }, { label: 'Adet', num: true },
+               { label: 'Gerçek', num: true }, { label: 'Tahmin', num: true, m: false },
+               { label: 'Fark', num: true }, { label: 'TP2', num: true, m: false },
+               { label: 'Ort. MFE', num: true, m: false }], bantRows,
+              { empty: 'Henüz sonuçlanmış sinyal yok' })}
+      <div class="note"><b>Gerçek</b>: TP1'e stop'tan önce ulaşan sinyallerin oranı.
+        <b>Tahmin</b>: sistemin o sinyallerde söylediği ortalama olasılık.
+        Fark eksiyse sistem kendine fazla güveniyor demektir.</div>
+    </div>`;
+
+  const yonRows = ist.yone.map((y) => ({
+    cells: [y.yon, String(y.adet), { html: `<b>%${y.basariOrani.toFixed(0)}</b>` },
+      `%${y.tp2Orani.toFixed(0)}`, y.ortMfe.toFixed(2) + 'R', y.ortMae.toFixed(2) + 'R'],
+  }));
+  const pariteRows = ist.pariteler.map((p) => ({
+    click: p.symbol,
+    cells: [p.symbol, String(p.adet), { html: `<b>%${p.basariOrani.toFixed(0)}</b>` },
+      p.ortMfe.toFixed(2) + 'R'],
+  }));
+
+  const kirilim = `
+    <div class="grid2">
+      <div class="card"><h3>Yöne Göre</h3>
+        ${table([{ label: 'Yön' }, { label: 'Adet', num: true }, { label: 'Başarı', num: true },
+                 { label: 'TP2', num: true, m: false }, { label: 'Ort. MFE', num: true },
+                 { label: 'Ort. MAE', num: true, m: false }], yonRows,
+                { empty: 'Veri yok' })}</div>
+      <div class="card"><h3>Pariteye Göre <span class="muted">(en az 3 kayıt)</span></h3>
+        ${table([{ label: 'Parite' }, { label: 'Adet', num: true },
+                 { label: 'Başarı', num: true }, { label: 'Ort. MFE', num: true, m: false }], pariteRows,
+                { empty: 'Henüz yeterli kayıt yok' })}</div>
+    </div>`;
+
+  // ---- sinyal listesi
+  const satir = (s) => {
+    const yas = timeAgo(new Date(s.ts).toISOString());
+    const hedef = s.hedefler?.[0]?.fiyat;
+    return {
+      click: s.symbol,
+      cells: [
+        { html: `<b>${esc(s.symbol)}</b>` },
+        { html: `<span class="${s.yon === 'LONG' ? 'up' : 'down'}">${s.yon}</span>` },
+        { html: `<span class="badge ${DURUM_RENK[s.sonuc] || DURUM_RENK[s.durum] || ''}">${esc(journal.durumEtiketi(s))}</span>` },
+        s.longSkor?.toFixed(0) ?? '—',
+        fmtPrice(s.giris),
+        fmtPrice(s.stop),
+        fmtPrice(hedef),
+        { html: `<span class="${s.mfeR > 0 ? 'up' : 'flat'}">${(s.mfeR ?? 0).toFixed(2)}R</span>` },
+        { html: `<span class="${s.maeR < 0 ? 'down' : 'flat'}">${(s.maeR ?? 0).toFixed(2)}R</span>` },
+        yas,
+      ],
+    };
+  };
+
+  const basliklar = [{ label: 'Parite' }, { label: 'Yön' }, { label: 'Durum' },
+    { label: 'Skor', num: true }, { label: 'Giriş', num: true, m: false },
+    { label: 'Stop', num: true, m: false }, { label: 'TP1', num: true, m: false },
+    { label: 'En iyi', num: true }, { label: 'En kötü', num: true, m: false },
+    { label: 'Ne zaman', m: false }];
+
+  // Sonucu belli olanlar (TP1/STOP) — işlem hâlâ açık olsa bile istatistiğe girer
+  const kararli = (s) => s.sonuc === 'TP1' || s.sonuc === 'STOP';
+  const acikList = hepsi.filter((s) => journal.acikMi(s) && !kararli(s));
+  const kapaliList = hepsi.filter((s) => !journal.acikMi(s) || kararli(s));
+
+  const listeler = `
+    <div class="card"><h3>Açık Sinyaller <span class="muted">(${acikList.length})</span></h3>
+      ${table(basliklar, acikList.map(satir),
+        { empty: 'Açık sinyal yok. Tarama yapıp setup üretildiğinde buraya düşer.' })}
+    </div>
+    <div class="card"><h3>Sonuçlanan Sinyaller <span class="muted">(${kapaliList.length})</span></h3>
+      ${table(basliklar, kapaliList.slice(0, 100).map(satir), { empty: 'Henüz sonuçlanan sinyal yok' })}
+      <div class="note">Ölçüm kuralları: Başarı = TP1'e stop'tan önce ulaşmak.
+        Aynı mumda ikisine de dokunulduysa stop önce sayılır (kötümser varsayım).
+        Kâr/zarar simüle edilmez — gerçek kazanç pozisyon yönetimine bağlıdır,
+        onun yerine ulaşılan en iyi/en kötü nokta R cinsinden gösterilir.</div>
+    </div>`;
+
+  el.innerHTML = kartlar + kalibrasyon + kirilim + listeler;
+
+  $('gunlukGuncelle')?.addEventListener('click', gunlukGuncelle);
+  $('gunlukSil')?.addEventListener('click', () => {
+    if (!confirm('Tüm sinyal geçmişi silinecek. Emin misiniz?')) return;
+    journal.hepsiniSil();
+    renderGunluk();
+  });
+  wireRowClicks(el);
+}
+
+async function gunlukGuncelle() {
+  if (busy) return;
+  setBusy(true, 'Sinyal sonuçları ölçülüyor...');
+  try {
+    const r = await journal.sonuclariGuncelle({ onProgress: (m) => setBusy(true, m) });
+    renderGunluk();
+    if (r.kontrol === 0) showInfo('Tüm sinyaller yakın zamanda ölçüldü, güncelleme gerekmedi.');
+    else showInfo(`${r.kontrol} sinyal ölçüldü, ${r.kapanan} tanesi sonuçlandı.`);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    setBusy(false);
+  }
+}
+
+// ===========================================================================
+// 8) SIRALAMA (izleme listesi)
 // ===========================================================================
 function renderSiralama() {
   const el = $('tab-siralama');
@@ -801,12 +970,17 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${name}`));
   localStorage.setItem('kripto.lastTab', name);
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Günlük sekmesi açıldığında açık sinyallerin sonucu sessizce tazelenir
+  if (name === 'gunluk' && !busy && journal.acikSinyaller().length) {
+    journal.sonuclariGuncelle().then((r) => { if (r.kontrol) renderGunluk(); }).catch(() => {});
+  }
 }
 
 function renderAll() {
   if (snap) { renderHeadline(); renderKpis(); }
   renderKarar(); renderTrend(); renderSmart(); renderTurev();
-  renderAkis(); renderBalina(); renderSiralama(); renderPiyasa(); renderAyarlar();
+  renderAkis(); renderBalina(); renderGunluk(); renderSiralama();
+  renderPiyasa(); renderAyarlar();
 }
 
 // Yeni sürüm yayınlandığında telefonun eski sürümde kalmaması için:

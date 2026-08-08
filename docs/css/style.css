@@ -83,6 +83,9 @@ select {
   background: rgba(224,75,75,.12); border: 1px solid rgba(224,75,75,.4);
   border-radius: var(--radius); font-size: .85rem;
 }
+.error-box.info {
+  background: rgba(79,195,247,.12); border-color: rgba(79,195,247,.4);
+}
 
 /* ---------------------------------------------------------------- headline */
 main { padding: 12px 14px 40px; max-width: 1200px; margin: 0 auto; }
@@ -231,6 +234,7 @@ td.wrap { white-space: normal; min-width: 180px; }
   .hide-m { display: none !important; }
   .tbl-wrap table { width: 100%; }
   td.wrap { min-width: 0; }
+  .badge { font-size: .66rem; padding: 2px 6px; }
 }
 
 @media (prefers-color-scheme: light) {

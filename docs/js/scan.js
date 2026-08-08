@@ -5,6 +5,7 @@ import {
   derivativesEngine, interpretOi, orderBookEngine, orderFlowEngine,
   smartMoneyEngine, trendEngine, whaleEngine,
 } from './engines.js';
+import * as journal from './journal.js';
 import { riskEngine, scoreEngine, tradeSetupEngine } from './scoring.js';
 import * as store from './store.js';
 import { clamp, percentile, pctChange, pool } from './util.js';
@@ -118,6 +119,13 @@ export async function scanSymbol(symbol, cfg, { onProgress = () => {}, aggPages 
     ts: snapshot.timestamp, price, longScore: score.longScore,
     shortScore: score.shortScore, decision: score.decision,
   });
+
+  // Setup üretildiyse sinyal günlüğüne düşsün — sonucu sonradan otomatik ölçülecek
+  try {
+    journal.kaydet(snapshot);
+  } catch (e) {
+    console.warn('Sinyal günlüğe yazılamadı:', e);
+  }
 
   return snapshot;
 }

@@ -11,6 +11,51 @@ mantığı JavaScript'e çevrildiğinde hesaplama doğrudan telefonda yapılabil
 
 Sonuç: Mac kapalıyken, mobil veriyle, dünyanın her yerinden çalışır.
 
+## Sinyal Günlüğü
+
+Üretilen her trade setup kaydedilir ve sonucu 15 dakikalık mumlardan **otomatik
+ölçülür**. Amaç, "olasılık %71" gibi bir tahmini gerçek istatistiğe çevirmek.
+
+### Ölçüm kuralları
+
+Bu kurallar istatistiğin şişmemesi için bilinçli olarak muhafazakâr seçildi:
+
+| Kural | Gerekçe |
+|---|---|
+| Başarı ölçütü ikili: **TP1 mi önce geldi, stop mu?** | Net, tartışmasız bir sonuç |
+| Kâr/zarar **simüle edilmez** | Gerçek kazanç, modellemediğimiz pozisyon yönetimine (kısmi çıkış, stop taşıma) bağlıdır. Onun yerine ulaşılan en iyi nokta (MFE) ve en kötü geri çekilme (MAE) R cinsinden raporlanır |
+| Aynı mumda hem stop hem TP dokunulduysa **stop önce sayılır** | OHLC verisinden sıra bilinemez; kötümser taraf seçilir |
+| Fiyat giriş bölgesine gelmediyse **"giriş olmadı"** | Gerçekleşmemiş işlem başarı oranına katılmaz |
+| 7 günde ne TP ne stop → **"zaman aşımı"**, orana katılmaz | Ne kazanç ne kayıp; ayrı raporlanır |
+
+### Neden `sonuç` ile `durum` ayrı?
+
+İşlem TP3'e veya stop'a kadar açık kalır, ama başarı sorusu çok daha erken
+cevaplanır. İkisi ayrılmazsa şu sapma oluşur: **kaybedenler stop'a çarpıp hemen
+kapanır, kazananlar TP3'ü beklerken açık kalır ve istatistiğe girmez** — başarı
+oranı olduğundan düşük görünür.
+
+Gerçek veriyle ölçüldü: ayrım yapılmadığında 7 sinyal sonuçlanmış görünüp başarı
+%14 çıkıyordu; ayrım yapıldığında 13 sinyal sonuçlandı ve oran %31'e düzeldi.
+
+Bu yüzden `sonuc` alanı TP1 veya STOP'un ilki gerçekleştiği anda sabitlenir;
+istatistik bunu kullanır. `durum` ise kullanıcıya gösterilen güncel hâldir
+(`AÇIK · TP1 ✓` gibi).
+
+### Kalibrasyon tablosu
+
+Skor bandına göre gerçek başarı oranını sistemin kendi tahminiyle yan yana koyar:
+
+| Skor bandı | Adet | Gerçek | Tahmin | Fark |
+|---|---:|---:|---:|---:|
+| 62-75 (Long) | 34 | %58 | %66 | −8 puan |
+
+Fark eksiyse sistem kendine fazla güveniyor demektir. Yeterli kayıt biriktiğinde
+(en az 20, tercihen 50+) hangi eşiğin üstünde işlem yapmanın anlamlı olduğunu
+veriyle söyleyebiliriz.
+
+---
+
 ## Python sürümüyle farkı
 
 | | Python (Mac/Pi/VPS) | Bu sürüm (telefon) |
