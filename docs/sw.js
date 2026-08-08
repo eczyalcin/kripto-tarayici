@@ -4,7 +4,7 @@
 
 // Sürüm değişince eski önbellek silinir ve kullanıcıya "yeni sürüm" bildirimi gider.
 // Kod güncellendiğinde bu numarayı artırın.
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const CACHE = `kripto-${VERSION}`;
 const SHELL = [
   './',

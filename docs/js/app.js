@@ -39,11 +39,16 @@ function fillSymbols() {
   sel.value = cfg.symbols.includes(saved) ? saved : cfg.primarySymbol;
 }
 
+// headers: [{ label, num, m }] — m:false olan sütunlar telefonda gizlenir,
+// böylece tablolar yatay kaydırma gerektirmeden ekrana sığar.
 function table(headers, rows, opts = {}) {
   if (!rows.length) return `<div class="empty">${esc(opts.empty || 'Kayıt yok')}</div>`;
-  const th = headers.map((h) => `<th class="${h.num ? 'num' : ''}">${esc(h.label)}</th>`).join('');
+  const cls = (h, extra = '') =>
+    [h.num ? 'num' : '', h.m === false ? 'hide-m' : '', extra].filter(Boolean).join(' ');
+  const th = headers.map((h) => `<th class="${cls(h)}">${esc(h.label)}</th>`).join('');
   const tb = rows.map((r) => {
-    const tds = r.cells.map((c, i) => `<td class="${headers[i].num ? 'num' : ''} ${c.wrap ? 'wrap' : ''}">${c.html ?? esc(c.text ?? c)}</td>`).join('');
+    const tds = r.cells.map((c, i) =>
+      `<td class="${cls(headers[i] || {}, c.wrap ? 'wrap' : '')}">${c.html ?? esc(c.text ?? c)}</td>`).join('');
     return `<tr class="${r.click ? 'clickable' : ''}" ${r.click ? `data-click="${esc(r.click)}"` : ''}>${tds}</tr>`;
   }).join('');
   return `<div class="tbl-wrap"><table><thead><tr>${th}</tr></thead><tbody>${tb}</tbody></table></div>`;
@@ -94,17 +99,20 @@ function renderKarar() {
   if (!snap) { el.innerHTML = '<div class="card"><div class="empty">Önce bir tarama yapın.</div></div>'; return; }
   const s = snap.score, setup = snap.setup, risk = snap.risk;
 
-  const bars = s.components.map((c) => ({
-    label: c.name, value: c.points, max: c.maxPoints,
-    text: `${signed(c.points, 1)} / ${c.maxPoints}`,
-    color: !c.available ? '#5b6675' : c.points > 0 ? '#26a65b' : c.points < 0 ? '#e04b4b' : '#8892a4',
-  }));
-
-  const compRows = s.components.map((c) => ({
-    cells: [c.name, { html: `<span class="${tone(c.points)}">${signed(c.points, 1)}</span>` },
-      String(c.maxPoints), c.direction,
-      { text: c.available ? c.detail : 'veri yok', wrap: true }],
-  }));
+  // Telefonda yatay kaydırma olmasın diye tablo yerine dikey liste:
+  // her gösterge kendi satırında, mini çubuk + açıklama alt alta.
+  const compList = s.components.map((c) => {
+    const pct = Math.min(Math.abs(c.points) / c.maxPoints, 1) * 100;
+    const col = !c.available ? '#5b6675' : c.points > 0 ? 'var(--green)' : c.points < 0 ? 'var(--red)' : '#8892a4';
+    return `<div class="comp">
+      <div class="comp-top">
+        <span class="comp-name">${esc(c.name)}</span>
+        <span class="comp-pts ${tone(c.points)}">${signed(c.points, 1)}<span class="comp-max"> / ${c.maxPoints}</span></span>
+      </div>
+      <div class="comp-bar ${c.points < 0 ? 'neg' : ''}"><i style="width:${pct.toFixed(0)}%;background:${col}"></i></div>
+      <div class="comp-detail">${esc(c.available ? c.detail : 'veri yok')}</div>
+    </div>`;
+  }).join('');
 
   let setupHtml;
   if (setup.available) {
@@ -139,7 +147,6 @@ function renderKarar() {
         <h3>Skor Dağılımı</h3>
         ${charts.gauge(s.longScore)}
         <div class="note" style="text-align:center">Long ${s.longScore.toFixed(1)} · kapsama %${s.coveragePct.toFixed(0)} · uzlaşma %${s.agreementPct.toFixed(0)}</div>
-        ${charts.hBarChart(bars)}
       </div>
       <div class="card">
         <h3>AI Trade Setup</h3>
@@ -148,13 +155,21 @@ function renderKarar() {
     </div>
     <div class="card">
       <h3>Gösterge Detayları</h3>
-      ${table([{ label: 'Gösterge' }, { label: 'Puan', num: true }, { label: 'Maks', num: true },
-               { label: 'Yön' }, { label: 'Detay' }], compRows)}
+      <div class="comp-list">${compList}</div>
+      <div class="comp-total">
+        <span>Toplam</span>
+        <span class="${tone(s.totalPoints)}">${signed(s.totalPoints, 1)} / ${s.totalWeight}</span>
+      </div>
     </div>
     <div class="grid2">
       <div class="card"><h3>Risk Faktörleri</h3>
-        ${table([{ label: 'Faktör' }, { label: 'Değer' }, { label: 'Durum' }, { label: 'Puan', num: true }],
-          risk.factors.map((f) => ({ cells: [f.factor, f.value, f.state, String(f.points)] })))}
+        <div class="comp-list">
+          ${risk.factors.map((f) => `<div class="comp">
+            <div class="comp-top"><span class="comp-name">${esc(f.factor)}</span>
+              <span class="comp-pts ${f.points >= 2 ? 'down' : f.points >= 1 ? 'flat' : 'up'}">${esc(f.state)}</span></div>
+            <div class="comp-detail">${esc(f.value)}${f.note ? ' · ' + esc(f.note) : ''}</div>
+          </div>`).join('') || '<div class="empty">Risk faktörü yok</div>'}
+        </div>
         <div class="note">${esc(risk.summary)}</div>
       </div>
       <div class="card"><h3>Skor Geçmişi</h3>${histHtml}</div>
@@ -221,15 +236,15 @@ function renderTrend() {
   const pts = mtf?.structure?.points || [];
   el.innerHTML = `
     <div class="card"><h3>Zaman Dilimleri</h3>
-      ${table([{ label: 'TF' }, { label: 'Yön' }, { label: 'EMA dizilimi' }, { label: 'ADX' },
-               { label: 'SuperTrend' }, { label: 'Yapı' }, { label: 'Son etiketler' },
-               { label: 'RSI', num: true }, { label: 'ATR %', num: true },
-               { label: 'VWAP-D %', num: true }, { label: 'VWAP-W %', num: true }], rows)}
+      ${table([{ label: 'TF' }, { label: 'Yön' }, { label: 'EMA dizilimi', m: false }, { label: 'ADX', m: false },
+               { label: 'SuperTrend', m: false }, { label: 'Yapı' }, { label: 'Son etiketler', m: false },
+               { label: 'RSI', num: true }, { label: 'ATR %', num: true, m: false },
+               { label: 'VWAP-D %', num: true }, { label: 'VWAP-W %', num: true, m: false }], rows)}
       <div class="note">${esc(t.summary)}</div>
     </div>
     <div class="card"><h3>${esc(names.mtf)} Grafiği</h3>${chartHtml}</div>
     <div class="card"><h3>Market Structure (HH / HL / LH / LL)</h3>
-      ${table([{ label: 'Zaman' }, { label: 'Tip' }, { label: 'Fiyat', num: true }, { label: 'Etiket' }],
+      ${table([{ label: 'Zaman' }, { label: 'Tip', m: false }, { label: 'Fiyat', num: true }, { label: 'Etiket' }],
         pts.slice().reverse().map((p) => ({
           cells: [new Date(p.time).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }),
             p.type === 'high' ? 'tepe' : 'dip', fmtPrice(p.price),
@@ -292,21 +307,21 @@ function renderSmart() {
       <div class="note">Skor: ${signed(sm.score, 2)} · ${esc(sm.label)}</div></div>
     <div class="grid2">
       <div class="card"><h3>Likidite Süpürmeleri</h3>
-        ${table([{ label: 'Tip' }, { label: 'Süpürülen', num: true }, { label: 'Fitil', num: true },
-                 { label: 'Hacim', num: true }, { label: 'Teyit' }, { label: 'Ne zaman' }], sweeps,
+        ${table([{ label: 'Tip' }, { label: 'Süpürülen', num: true }, { label: 'Fitil', num: true, m: false },
+                 { label: 'Hacim', num: true, m: false }, { label: 'Teyit', m: false }, { label: 'Ne zaman' }], sweeps,
                 { empty: 'Tespit edilen süpürme yok' })}</div>
       <div class="card"><h3>Yapı Kırılımları (BOS / CHOCH)</h3>
-        ${table([{ label: 'Tip' }, { label: 'Yön' }, { label: 'Kırılan', num: true }, { label: 'Ne zaman' }], breaks,
+        ${table([{ label: 'Tip' }, { label: 'Yön', m: false }, { label: 'Kırılan', num: true }, { label: 'Ne zaman' }], breaks,
                 { empty: 'Kırılım yok' })}</div>
     </div>
     <div class="grid2">
       <div class="card"><h3>Açık Fair Value Gap</h3>
         ${table([{ label: 'Tip' }, { label: 'Alt', num: true }, { label: 'Üst', num: true },
-                 { label: 'Boyut(ATR)', num: true }, { label: 'Uzaklık %', num: true },
-                 { label: 'Durum' }, { label: 'Ne zaman' }], fvgs, { empty: 'Açık FVG yok' })}</div>
+                 { label: 'Boyut(ATR)', num: true, m: false }, { label: 'Uzaklık %', num: true },
+                 { label: 'Durum', m: false }, { label: 'Ne zaman', m: false }], fvgs, { empty: 'Açık FVG yok' })}</div>
       <div class="card"><h3>Taze Order Block</h3>
         ${table([{ label: 'Tip' }, { label: 'Alt', num: true }, { label: 'Üst', num: true },
-                 { label: 'Hareket', num: true }, { label: 'Uzaklık %', num: true }, { label: 'Ne zaman' }], obs,
+                 { label: 'Hareket', num: true, m: false }, { label: 'Uzaklık %', num: true }, { label: 'Ne zaman', m: false }], obs,
                 { empty: 'Taze order block yok' })}</div>
     </div>`;
 }
@@ -413,7 +428,7 @@ function renderAkis() {
     </div>
     <div class="card"><h3>Agresif Alıcı / Satıcı</h3>
       ${table([{ label: 'Piyasa' }, { label: 'Alım', num: true }, { label: 'Satım', num: true },
-               { label: 'Delta', num: true }, { label: 'Dengesizlik', num: true }, { label: 'İşlem', num: true }], rows)}
+               { label: 'Delta', num: true }, { label: 'Dengesizlik', num: true, m: false }, { label: 'İşlem', num: true, m: false }], rows)}
       <div class="note"><b>${esc(flow.divergence)}</b> — ${esc(flow.divergenceNote || 'Spot karşılığı olmadığı için karşılaştırma yapılamadı')}</div>
     </div>`;
 }
@@ -435,8 +450,8 @@ function renderBalina() {
         { html: `<span class="${tone(v.deltaUsdt)}">${fmtUsd(v.deltaUsdt)}</span>` }],
     }));
     tierHtml += `<h4>${name} — ${m.state} (delta ${fmtUsd(m.whaleDeltaUsdt)} USDT)</h4>` +
-      table([{ label: 'Dilim' }, { label: 'Eşik', num: true }, { label: 'İşlem', num: true },
-             { label: 'Alım', num: true }, { label: 'Satım', num: true }, { label: 'Delta', num: true }], rows);
+      table([{ label: 'Dilim' }, { label: 'Eşik', num: true, m: false }, { label: 'İşlem', num: true },
+             { label: 'Alım', num: true, m: false }, { label: 'Satım', num: true, m: false }, { label: 'Delta', num: true }], rows);
     if (m.tierScaling?.scaled) {
       tierHtml += `<div class="note">⚙️ Bu paritede tek işlem 100k USDT'yi nadiren aştığı için eşikler
         otomatik ölçeklendi (taban ≈ ${fmtUsd(m.tierScaling.base)} USDT).</div>`;
@@ -464,10 +479,10 @@ function renderBalina() {
     <div class="grid2">
       <div class="card"><h3>En Büyük İşlemler (vadeli)</h3>
         ${table([{ label: 'Saat' }, { label: 'Yön' }, { label: 'Fiyat', num: true },
-                 { label: 'Miktar', num: true }, { label: 'USDT', num: true }], big)}</div>
+                 { label: 'Miktar', num: true, m: false }, { label: 'USDT', num: true }], big)}</div>
       <div class="card"><h3>Iceberg Şüphesi</h3>
-        ${table([{ label: 'Miktar', num: true }, { label: 'Yön' }, { label: 'Tekrar', num: true },
-                 { label: 'Toplam', num: true }, { label: 'Ort. fiyat', num: true }, { label: 'Süre', num: true }], ice,
+        ${table([{ label: 'Miktar', num: true, m: false }, { label: 'Yön' }, { label: 'Tekrar', num: true },
+                 { label: 'Toplam', num: true }, { label: 'Ort. fiyat', num: true, m: false }, { label: 'Süre', num: true, m: false }], ice,
                 { empty: 'Iceberg tespit edilmedi' })}</div>
     </div>
     <div class="card"><h3>Order Book Derinliği</h3>
@@ -482,8 +497,8 @@ function renderBalina() {
         <dt>Okunan seviye</dt><dd>${b.levelsRead}</dd>
       </dl>
       <h4>Duvarlar</h4>
-      ${table([{ label: 'Taraf' }, { label: 'Fiyat', num: true }, { label: 'Miktar', num: true },
-               { label: 'USDT', num: true }, { label: 'Ort. kat', num: true }, { label: 'Uzaklık %', num: true }], wallRows,
+      ${table([{ label: 'Taraf' }, { label: 'Fiyat', num: true }, { label: 'Miktar', num: true, m: false },
+               { label: 'USDT', num: true }, { label: 'Ort. kat', num: true, m: false }, { label: 'Uzaklık %', num: true }], wallRows,
               { empty: 'Belirgin duvar yok' })}
       ${b.spoofs?.length ? `<h4>⚠️ Spoof şüphesi</h4>${table([{ label: 'Taraf' }, { label: 'Fiyat', num: true }, { label: 'USDT', num: true }, { label: 'Erime %', num: true }],
         b.spoofs.map((s) => ({ cells: [s.side, fmtPrice(s.price), fmtUsd(s.notional), fmt(s.shrinkPct, 0)] })))}` : ''}
@@ -518,11 +533,12 @@ function renderSiralama() {
       <div class="note">Her parite ~10-15 sn sürer. Sonuçlar cihazda saklanır.</div>
     </div>
     <div class="card">
-      ${table([{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true },
-               { label: 'Long', num: true }, { label: 'Short', num: true }, { label: 'Karar' },
-               { label: 'Güven', num: true }, { label: 'Trend' }, { label: 'OI 1s', num: true },
-               { label: 'Funding', num: true }, { label: 'CVD' }, { label: 'Balina' },
-               { label: 'Risk' }, { label: 'Tarama' }], rows,
+      ${table([{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true, m: false },
+               { label: 'Long', num: true }, { label: 'Short', num: true, m: false }, { label: 'Karar' },
+               { label: 'Güven', num: true, m: false }, { label: 'Trend', m: false },
+               { label: 'OI 1s', num: true }, { label: 'Funding', num: true, m: false },
+               { label: 'CVD', m: false }, { label: 'Balina', m: false },
+               { label: 'Risk' }, { label: 'Tarama', m: false }], rows,
               { empty: 'Henüz tarama yok — yukarıdaki düğmeye basın.' })}
     </div>`;
 
@@ -594,10 +610,11 @@ function renderPiyasa() {
           <select id="biasSel"><option value="">(hepsi)</option>
             ${['LONG EĞİLİM', 'SHORT EĞİLİM', 'NÖTR'].map((s) => `<option ${marketFilter.bias === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
       </div>
-      ${table([{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true }, { label: '24s %', num: true },
-               { label: 'Dikkat', num: true }, { label: 'OI 1s %', num: true }, { label: 'Fiyat 1s %', num: true },
-               { label: 'OI Durumu' }, { label: 'Funding', num: true }, { label: '24s Hacim', num: true },
-               { label: 'Ön eğilim' }], rows)}
+      ${table([{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true, m: false },
+               { label: '24s %', num: true }, { label: 'Dikkat', num: true },
+               { label: 'OI 1s %', num: true }, { label: 'Fiyat 1s %', num: true, m: false },
+               { label: 'OI Durumu' }, { label: 'Funding', num: true, m: false },
+               { label: '24s Hacim', num: true, m: false }, { label: 'Ön eğilim', m: false }], rows)}
       <div class="note">${view.length} parite gösteriliyor. Satıra dokununca o parite taranır.</div>
     </div>
     <div class="card"><h3>En Dikkat Çekici 15 Parite</h3>${charts.hBarChart(top, { rowH: 26 })}</div>`;
