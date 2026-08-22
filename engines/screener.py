@@ -197,13 +197,20 @@ def screen_market(client: BinanceClient, cfg: Config,
     liquid = liquid.merge(oi_df, on="symbol", how="left")
 
     # ------------------------------------------------------- 4) yorum + skor
-    states, scores_oi = [], []
+    # OI verisi olmayan pariteler dikkat skorunun 40 puanını (30 OI değişimi +
+    # 10 durum bonusu) alamaz; işaretleyip sıralamada sona koyuyoruz ki
+    # sessizce dezavantajlı duruma düşmesinler.
+    states, scores_oi, eksik = [], [], []
     for _, r in liquid.iterrows():
-        interp = interpret_oi(r.get("oi_change_1h"), r.get("price_change_1h"))
-        states.append(interp["state"])
-        scores_oi.append(interp["score"])
+        yok = pd.isna(r.get("oi_change_1h"))
+        eksik.append(bool(yok))
+        interp = interpret_oi(None if yok else r.get("oi_change_1h"),
+                              None if yok else r.get("price_change_1h"))
+        states.append(None if yok else interp["state"])
+        scores_oi.append(None if yok else interp["score"])
     liquid["oi_state"] = states
     liquid["oi_score"] = scores_oi
+    liquid["oi_missing"] = eksik
 
     vol_ranks = liquid["quoteVolume"].rank(pct=True)
     liquid["interest"] = [
@@ -217,10 +224,15 @@ def screen_market(client: BinanceClient, cfg: Config,
 
     cols = ["symbol", "lastPrice", "priceChangePercent", "quoteVolume", "funding_pct",
             "oi", "oi_usdt", "oi_change_1h", "oi_change_4h", "price_change_1h",
-            "oi_state", "interest", "bias", "bias_label"]
+            "oi_state", "oi_missing", "interest", "bias", "bias_label"]
     cols = [c for c in cols if c in liquid.columns]
-    out = liquid[cols].sort_values("interest", ascending=False).reset_index(drop=True)
+    out = (liquid[cols]
+           .sort_values(["oi_missing", "interest"], ascending=[True, False])
+           .reset_index(drop=True))
     out.index = out.index + 1
+    if int(liquid["oi_missing"].sum()):
+        log.warning(f"{int(liquid['oi_missing'].sum())} paritenin OI verisi çekilemedi "
+                    f"(güvenlik tavanı {oi_limit}); eksik skorla en sonda listelendiler")
     return out
 
 

@@ -730,12 +730,14 @@ function renderPiyasa() {
       <p class="muted" style="font-size:.84rem">Binance vadelideki tüm sürekli pariteler
         ucuz toplu veriyle taranır. <b>Dikkat</b> skoru yön değil hareketlilik ölçer.</p>
       <div class="row-actions">
-        <button class="btn" id="screenBtn">Ön eleme (~45 sn)</button>
+        <button class="btn" id="screenBtn">Ön eleme (~15 sn)</button>
         <button class="btn primary" id="deepBtn">Ön eleme + derin tarama</button>
       </div>
-      <div class="note">Ön eleme ~200 pariteyi tarar (~45 sn, ~1 MB veri). Derin tarama
-        ayrıca dikkat skoru en yüksek ${cfg.market.deepScanTop} pariteyi 9 motorla
-        inceler (~2-3 dk, ~5 MB).</div>
+      <div class="note">Ön eleme, ${fmtUsd(cfg.market.minQuoteVolumeUsdt)} USDT üstü
+        24s hacme sahip <b>tüm</b> pariteleri tarar — bugün ~380 parite, ~15 sn.
+        Kapsamı Ayarlar'daki hacim filtresinden değiştirebilirsin (0 yazarsan 527
+        paritenin tamamı). Derin tarama ayrıca dikkat skoru en yüksek
+        ${cfg.market.deepScanTop} pariteyi 9 motorla inceler (~2-3 dk).</div>
     </div>`;
 
   if (!scr) {
@@ -754,9 +756,12 @@ function renderPiyasa() {
     cells: [String(i + 1), r.symbol, fmtPrice(r.lastPrice),
       { html: `<span class="${tone(r.priceChangePercent)}">%${fmt(r.priceChangePercent)}</span>` },
       { html: `<b>${(r.interest ?? 0).toFixed(0)}</b>` },
-      { html: `<span class="${tone(r.oiChange1h)}">%${fmt(r.oiChange1h)}</span>` },
-      { html: `<span class="${tone(r.priceChange1h)}">%${fmt(r.priceChange1h)}</span>` },
-      r.oiState || '—', `%${fmt(r.fundingPct, 4)}`, fmtUsd(r.quoteVolume),
+      { html: r.oiVerisiYok ? '<span class="muted">—</span>'
+        : `<span class="${tone(r.oiChange1h)}">%${fmt(r.oiChange1h)}</span>` },
+      { html: r.oiVerisiYok ? '<span class="muted">—</span>'
+        : `<span class="${tone(r.priceChange1h)}">%${fmt(r.priceChange1h)}</span>` },
+      r.oiVerisiYok ? { html: '<span class="muted">OI verisi yok</span>' } : (r.oiState || '—'),
+      `%${fmt(r.fundingPct, 4)}`, fmtUsd(r.quoteVolume),
       { html: `<span class="${r.biasLabel === 'LONG EĞİLİM' ? 'up' : r.biasLabel === 'SHORT EĞİLİM' ? 'down' : 'flat'}">${r.biasLabel || '—'}</span>` }],
   }));
 
@@ -768,7 +773,12 @@ function renderPiyasa() {
 
   el.innerHTML = controls + `
     <div class="card">
-      <div class="note">Son tarama: ${timeAgo(new Date(scr.ts).toISOString())} · ${scr.total} parite</div>
+      <div class="note">Son tarama: ${timeAgo(new Date(scr.ts).toISOString())} ·
+        <b>${scr.total}</b> parite listelendi${(() => {
+          const eksik = scr.records.filter((r) => r.oiVerisiYok).length;
+          return eksik ? ` · ${scr.total - eksik} tanesinin Open Interest verisi çekildi
+            (kalan ${eksik} parite eksik veriyle en sonda)` : ' · tümünün Open Interest verisi çekildi';
+        })()}</div>
       <div class="grid2" style="margin-top:10px">
         <div class="field"><label>En düşük dikkat skoru: <b id="minIntVal">${marketFilter.minInterest}</b></label>
           <input type="range" id="minInt" min="0" max="100" step="5" value="${marketFilter.minInterest}"></div>

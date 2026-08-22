@@ -179,8 +179,14 @@ market:
   #   1M → 408 parite · 5M → 160 · 10M → 106 · 20M → 67
   # 0 yazarsanız veya `--all` verirseniz hiç eleme yapılmaz.
   min_quote_volume_usdt: 3000000
-  oi_enrich_top: 250                # OI verisi çekilecek parite sayısı (hacim sırasıyla)
-  oi_workers: 4                     # paralel istek sayısı (artırmak IP yasağı riski)
+  # Güvenlik tavanı — normalde devreye girmez. Kapsamı belirleyen ayar yukarıdaki
+  # hacim filtresidir; filtreyi geçen her paritenin OI verisi çekilir. Bu tavanı
+  # aşan pariteler OI verisi olmadan listelenir (dikkat skorunun 40 puanını
+  # alamazlar) ve sıralamada sona konur.
+  oi_enrich_top: 450
+  # Ölçüm (tarayıcı, fiber): 5 paralel → 11.6 parite/sn, 10 → 25.9, 16 → 33.9.
+  # 10'da kalıyoruz; daha agresif değer IP yasağı riskini artırır.
+  oi_workers: 10
   deep_scan_top: 20                 # tam taramaya girecek parite sayısı
   always_include_watchlist: true    # config'teki `symbols` her zaman derin taransın
   extreme_funding_pct: 0.05         # dikkat skorunda "aşırı funding" eşiği (%)

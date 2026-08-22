@@ -91,9 +91,16 @@ export const DEFAULTS = {
 
   market: {
     quoteAsset: 'USDT',
+    // Kapsamı belirleyen TEK ayar bu: hacim filtresini geçen her paritenin
+    // Open Interest verisi çekilir. (Referans: 3M → ~384 parite, 10M → ~182)
     minQuoteVolumeUsdt: 3_000_000,
-    oiEnrichTop: 150,
-    oiConcurrency: 5,
+    // Güvenlik tavanı — normalde devreye girmez. Bu sayıyı aşan pariteler
+    // OI verisi olmadan listelenir ve sıralamada en sona konur.
+    oiEnrichTop: 450,
+    // Ölçüldü: 5 eşzamanlı → 11.6 parite/sn, 10 → 25.9, 16 → 33.9, 24 → 53.9.
+    // 10'da kalıyoruz: mobil operatörler IP paylaştırdığı için (CGNAT) daha
+    // agresif değer, aynı IP'yi kullanan başkalarını da riske atar.
+    oiConcurrency: 10,
     deepScanTop: 10,
     alwaysIncludeWatchlist: true,
     extremeFundingPct: 0.05,

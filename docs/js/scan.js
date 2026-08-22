@@ -220,10 +220,15 @@ export async function screenMarket(cfg, { onProgress = () => {} } = {}) {
   const oiMap = new Map(oiRows.filter(Boolean).map((r) => [r.symbol, r]));
 
   for (const r of liquid) {
-    Object.assign(r, oiMap.get(r.symbol) || {});
+    const oi = oiMap.get(r.symbol);
+    Object.assign(r, oi || {});
+    // OI verisi olmayan pariteler dikkat skorunun 40 puanını (30 OI değişimi +
+    // 10 durum bonusu) hiç alamaz. Bunları işaretliyoruz ki sıralamada
+    // sessizce dezavantajlı duruma düşmesinler.
+    r.oiVerisiYok = !oi || oi.oiChange1h == null;
     const interp = interpretOi(r.oiChange1h, r.priceChange1h);
-    r.oiState = interp.state;
-    r.oiScore = interp.score;
+    r.oiState = r.oiVerisiYok ? null : interp.state;
+    r.oiScore = r.oiVerisiYok ? null : interp.score;
     r.oiMeaning = interp.meaning;
   }
 
@@ -241,7 +246,13 @@ export async function screenMarket(cfg, { onProgress = () => {} } = {}) {
     r.biasLabel = b.label;
   }
 
-  liquid.sort((a, b) => b.interest - a.interest);
+  // OI verisi olanlar önce sıralanır; olmayanlar (güvenlik tavanı devreye
+  // girdiyse) eksik skorla üste çıkamayacakları için sona alınır.
+  liquid.sort((a, b) => {
+    if (a.oiVerisiYok !== b.oiVerisiYok) return a.oiVerisiYok ? 1 : -1;
+    return b.interest - a.interest;
+  });
+  liquid.oiCekilen = targets.length;
   store.saveScreening(liquid);
   return liquid;
 }

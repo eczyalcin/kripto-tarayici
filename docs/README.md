@@ -126,8 +126,25 @@ Sonra `http://localhost:8600` adresini açın.
 | İşlem | Süre | Veri |
 |---|---:|---:|
 | Tek parite tam tarama | ~12 sn | ~1.5 MB |
-| Piyasa ön elemesi (196 parite) | ~43 sn | ~1 MB |
-| Ön eleme + 10 parite derin tarama | ~3 dk | ~5 MB |
+| Piyasa ön elemesi (384 parite, 3M filtre) | ~15 sn | ~2 MB |
+| Piyasa ön elemesi (527 parite, filtresiz) | ~20 sn | ~3 MB |
+| Ön eleme + 10 parite derin tarama | ~3 dk | ~7 MB |
 
 Mobil veride biraz daha uzun sürer. Ayarlar sekmesinden "işlem akışı sayfası"
 değerini 1'e düşürerek veri kullanımını yarıya indirebilirsiniz.
+
+### Ön elemenin kapsamı nasıl belirleniyor?
+
+Kapsamı belirleyen **tek** ayar 24 saatlik hacim filtresidir; filtreyi geçen her
+paritenin Open Interest verisi çekilir. `oiEnrichTop` yalnızca bir güvenlik
+tavanıdır (450) ve normalde devreye girmez.
+
+Bu tavan devreye girerse, kapsam dışı kalan pariteler tabloda **"OI verisi yok"**
+olarak işaretlenir ve sıralamada en sona konur. Sebebi: dikkat skorunun 40 puanı
+(30 OI değişimi + 10 OI durumu) bu veriye bağlıdır; OI'sı olmayan bir parite
+olanla adil biçimde karşılaştırılamaz.
+
+Eşzamanlı istek sayısı 10'dur. Ölçüm (tarayıcı, fiber): 5 eşzamanlı → 11.6
+parite/sn, 10 → 25.9, 16 → 33.9, 24 → 53.9. Daha agresif değerler mümkün ama
+mobil operatörler IP paylaştırdığı için (CGNAT) aynı IP'yi kullanan başkalarını
+da riske atar; 10'da kalındı.
