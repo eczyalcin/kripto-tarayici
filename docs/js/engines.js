@@ -781,15 +781,24 @@ function walls(levels, mid, multiplier, side) {
   return out.sort((a, b) => b.notional - a.notional).slice(0, 6);
 }
 
-function compareWalls(prevWalls, curLevels, trades, side, cfg) {
+function compareWalls(prevWalls, curLevels, trades, side, cfg, tradesCover) {
   const spoofs = [], absorptions = [];
-  if (!prevWalls?.length) return { spoofs, absorptions };
+  if (!prevWalls?.length || !curLevels.length) return { spoofs, absorptions };
   const curMap = new Map(curLevels.map(([p, q]) => [p, q]));
+  // Şu anki kitabın kapsadığı fiyat aralığı (bid: en kötü → en iyi, ask: en iyi → en kötü)
+  const lo = Math.min(curLevels[0][0], curLevels[curLevels.length - 1][0]);
+  const hi = Math.max(curLevels[0][0], curLevels[curLevels.length - 1][0]);
 
   for (const w of prevWalls) {
     if (w.notional < cfg.spoofMinNotional) continue;
+    // Fiyat kaydığı için duvar 100 seviyelik pencerenin dışına çıktıysa (ya da
+    // fiyat duvarın içinden geçtiyse) kaybolması çekildiği anlamına gelmez.
+    if (w.price < lo || w.price > hi) continue;
     const nowQty = curMap.get(w.price) || 0;
     const shrink = w.qty ? 1 - nowQty / w.qty : 0;
+    // İşlem verisi önceki fotoğraftan bu yana geçen süreyi kapsamıyorsa duvarın
+    // yenip yenmediği bilinemez — spoof/absorption hükmü verilmez.
+    if (!tradesCover) continue;
 
     let tradedHere = 0;
     if (trades?.length) {
@@ -852,13 +861,17 @@ export function orderBookEngine(book, cfg, futTrades, prevSnapshot) {
   if (prevSnapshot) {
     const pBidWalls = walls(prevSnapshot.bids, prevSnapshot.mid, ob.wallMultiplier, 'bid');
     const pAskWalls = walls(prevSnapshot.asks, prevSnapshot.mid, ob.wallMultiplier, 'ask');
-    const r1 = compareWalls(pBidWalls, bids, futTrades, 'bid', ob);
-    const r2 = compareWalls(pAskWalls, asks, futTrades, 'ask', ob);
+    const tradesCover = !!futTrades?.length && futTrades[0].time <= prevSnapshot.ts;
+    const r1 = compareWalls(pBidWalls, bids, futTrades, 'bid', ob, tradesCover);
+    const r2 = compareWalls(pAskWalls, asks, futTrades, 'ask', ob, tradesCover);
     spoofs = [...r1.spoofs, ...r2.spoofs];
     absorptions = [...r1.absorptions, ...r2.absorptions];
     icebergs = [...bookIcebergs(prevSnapshot.bids, bids, 'bid'), ...bookIcebergs(prevSnapshot.asks, asks, 'ask')];
     const mins = Math.round((Date.now() - prevSnapshot.ts) / 60000);
-    compareNote = `Önceki fotoğrafla karşılaştırıldı (${mins} dk önce)`;
+    compareNote = tradesCover
+      ? `Önceki fotoğrafla karşılaştırıldı (${mins} dk önce)`
+      : `Önceki fotoğraf ${mins} dk önce — işlem verisi bu kadar geriye gitmediği için ` +
+        'spoof/absorption değerlendirilmedi. Birkaç dakika arayla iki tarama yapın.';
   }
 
   let score = clamp(nearImb * 2) * 0.55 + clamp(fullImb * 2) * 0.20;

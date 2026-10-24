@@ -6,6 +6,7 @@
 //   scans:<SEMBOL>   → skor geçmişi (grafik için)
 //   snapshot:<SEMBOL>→ son tam tarama sonucu
 //   screening        → son piyasa ön elemesi
+//   deepscan         → son derin taramadaki pariteler (Sıralama sekmesi için)
 
 const P = 'kripto.';
 const MAX_SCANS = 120;
@@ -76,11 +77,19 @@ export function allSnapshots(symbols) {
   return symbols.map((s) => latestSnapshot(s)).filter(Boolean);
 }
 
+// Ayarlar ve sinyal günlüğü aynı önekle saklanır ama "tarama verisi" değildir —
+// günlük haftalarca biriken kalibrasyon verisidir, kendi silme düğmesi var.
+const KORUNAN = [P + 'config.v1', P + 'journal.v1'];
+
 export function clearAll() {
   for (const k of Object.keys(localStorage)) {
-    if (k.startsWith(P)) localStorage.removeItem(k);
+    if (k.startsWith(P) && !KORUNAN.includes(k)) localStorage.removeItem(k);
   }
 }
+
+// --------------------------------------------------------- son derin tarama
+export const saveDeepScan = (symbols) => set('deepscan', { ts: Date.now(), symbols });
+export const latestDeepScan = () => get('deepscan');
 
 export function storageInfo() {
   let bytes = 0, count = 0;

@@ -303,19 +303,24 @@ export function tradeSetupEngine(symbol, engines, score, risk, cfg, meta) {
     for (const w of book.bidWalls || []) if (w.price < entry) structural.push(w.price);
   }
 
+  const entryR = roundTick(entry, tick, precision);
+  const stopR = roundTick(stop, tick, precision);
+  const dist = Math.abs(entryR - stopR);
+
   const targets = s.tpRMultiples.map((m, i) => {
     const raw = direction === 'LONG' ? entry + rDistance * m : entry - rDistance * m;
     const snapped = snapTarget(raw, structural, direction);
+    const price = roundTick(snapped, tick, precision);
     return {
-      name: `TP${i + 1}`, price: roundTick(snapped, tick, precision), rMultiple: m,
+      name: `TP${i + 1}`, price,
+      // Hedef yakındaki dirence/duvara çekildiyse gerçek R planlanandan farklıdır;
+      // R/R ve "düşük" uyarısı bu gerçek değere bakar.
+      rMultiple: dist ? +(Math.abs(price - entryR) / dist).toFixed(2) : m,
+      rPlanned: m,
       gainPct: ((snapped - entry) / entry) * 100 * (direction === 'LONG' ? 1 : -1),
       snapped: Math.abs(snapped - raw) > 1e-12,
     };
   });
-
-  const entryR = roundTick(entry, tick, precision);
-  const stopR = roundTick(stop, tick, precision);
-  const dist = Math.abs(entryR - stopR);
   const qty = dist ? risk.riskUsdt / dist : 0;
 
   const invalidation = [];

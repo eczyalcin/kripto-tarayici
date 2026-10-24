@@ -287,5 +287,8 @@ export async function scanMarket(cfg, { deep = true, topN = null, onProgress = (
     }
   }
   snapshots.sort((a, b) => b.score.longScore - a.score.longScore);
+  // Derin taranan pariteler çoğunlukla izleme listesinde değildir; Sıralama
+  // sekmesi onları da gösterebilsin diye liste ayrıca saklanır.
+  store.saveDeepScan(snapshots.map((s) => s.symbol));
   return { screened, snapshots, candidates };
 }

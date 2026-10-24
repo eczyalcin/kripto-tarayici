@@ -61,6 +61,7 @@ export const SONUC = {
 /** Listelerde gösterilecek etiket: hem güncel durum hem ulaşılan en iyi hedef. */
 export function durumEtiketi(s) {
   if (s.durum === DURUM.ACIK && s.enIyiHedef) return `AÇIK · ${s.enIyiHedef} ✓`;
+  if (s.durum === DURUM.BEKLIYOR && s.iptalTs) return 'İPTAL EDİLİYOR';
   return s.durum;
 }
 
@@ -106,7 +107,8 @@ export function kaydet(snapshot) {
   if (!setup?.available) return null;
 
   const list = oku();
-  const acik = list.find((s) => s.symbol === snapshot.symbol && acikMi(s));
+  // İptal istenmiş kayıtlar ölçülmeye devam eder ama yeni sinyali engellemez
+  const acik = list.find((s) => s.symbol === snapshot.symbol && acikMi(s) && !s.iptalTs);
 
   if (acik) {
     if (acik.yon === setup.direction) {
@@ -116,9 +118,11 @@ export function kaydet(snapshot) {
       yaz(list);
       return null;
     }
-    acik.durum = DURUM.IPTAL;
-    acik.kapanis = Date.now();
-    acik.not = 'Yön değişti, sinyal geçersiz kaldı';
+    // Yön değişti. Kayıttaki giriş bilgisi son ölçüm kadar güncel olduğundan
+    // burada kapatılmaz: o ana kadar giriş olmadıysa ölçüm İPTAL eder, olduysa
+    // işlem TP/stop'a kadar ölçülür (bkz. mumlariYurut).
+    acik.iptalTs = Date.now();
+    acik.not = 'Yön değişti — giriş olmadıysa iptal';
   }
 
   const kayit = {
@@ -174,8 +178,17 @@ export function mumlariYurut(kayit, mumlar) {
 
   for (const m of mumlar) {
     if (m.t < kayit.ts) continue;
+    // Ölçüm her seferinde baştan yürütülür; giriş zaten olduysa girişten önceki
+    // mumlar tekrar sayılmamalı — yoksa girişten ÖNCE görülen tepe TP1 sayılır.
+    if (girildi && girisZamani != null && m.t < girisZamani) continue;
 
     if (!girildi) {
+      // Yön değiştiği için iptal istenmiş ve o ana kadar giriş olmamışsa sinyal düşer.
+      // Giriş iptalden önce olduysa işlem ölçülmeye devam eder: girilmiş bir işlemi
+      // iptal saymak kaybedenleri istatistikten silerdi.
+      if (kayit.iptalTs && m.t > kayit.iptalTs) {
+        durum = DURUM.IPTAL; kapanis = kayit.iptalTs; break;
+      }
       if (m.t > girisSonu) {
         durum = DURUM.GIRIS_OLMADI; sonuc = SONUC.GIRIS_OLMADI; kapanis = girisSonu; break;
       }
@@ -186,15 +199,24 @@ export function mumlariYurut(kayit, mumlar) {
       girisZamani = m.t;
       durum = DURUM.ACIK;
     }
+    // Sonraki ölçümlerde de aynı mum aynı kuralla değerlendirilsin diye zamana bakılır
+    const girisMumu = m.t === girisZamani;
+
+    // Giriş mumunda tepe/dip girişten önce mi sonra mı oldu bilinemez. Mum zaten
+    // giriş seviyesinin ötesinde açıldıysa tamamı giriş sonrasıdır; değilse
+    // kötümser davranılır: stop sayılır, TP sayılmaz, en iyi nokta kapanıştan alınır.
+    const tamMum = !girisMumu || (long ? m.o <= kayit.giris : m.o >= kayit.giris);
+    const tepe = tamMum ? m.h : Math.max(m.c, kayit.giris);
+    const dip = tamMum ? m.l : Math.min(m.c, kayit.giris);
 
     // Girildikten sonra: R cinsinden en iyi ve en kötü noktalar
-    const lehte = long ? (m.h - kayit.giris) / R : (kayit.giris - m.l) / R;
+    const lehte = long ? (tepe - kayit.giris) / R : (kayit.giris - dip) / R;
     const aleyhte = long ? (m.l - kayit.giris) / R : (kayit.giris - m.h) / R;
     if (lehte > mfe) mfe = lehte;
     if (aleyhte < mae) mae = aleyhte;
 
     const stopDokundu = long ? m.l <= kayit.stop : m.h >= kayit.stop;
-    const tpDokundu = tp.map((p) => (long ? m.h >= p : m.l <= p));
+    const tpDokundu = tp.map((p) => (long ? tepe >= p : dip <= p));
 
     // Aynı mumda ikisi de olduysa STOP önce sayılır (kötümser varsayım).
     // Bu yüzden stop kontrolü TP kontrolünden önce gelir.

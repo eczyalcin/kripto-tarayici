@@ -26,25 +26,25 @@ function setBusy(on, text = '') {
   if (text) $('progressText').textContent = text;
 }
 
-function showError(msg) {
+// Önceki mesajın zamanlayıcısı yenisini erken kapatmasın
+let msgTimer = null;
+function showMsg(cls, html, ms) {
   const box = $('errorBox');
-  box.className = 'error-box';
-  box.innerHTML = `<b>Bir sorun oluştu</b><br>${esc(msg)}`;
-  setTimeout(() => box.classList.add('hidden'), 12000);
+  box.className = cls;
+  box.innerHTML = html;
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => box.classList.add('hidden'), ms);
 }
 
-function showInfo(msg) {
-  const box = $('errorBox');
-  box.className = 'error-box info';
-  box.innerHTML = esc(msg);
-  setTimeout(() => box.classList.add('hidden'), 6000);
-}
+const showError = (msg) => showMsg('error-box', `<b>Bir sorun oluştu</b><br>${esc(msg)}`, 12000);
+const showInfo = (msg) => showMsg('error-box info', esc(msg), 6000);
 
 function fillSymbols() {
   const sel = $('symbolSelect');
   sel.innerHTML = cfg.symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   const saved = localStorage.getItem('kripto.lastSymbol');
-  sel.value = cfg.symbols.includes(saved) ? saved : cfg.primarySymbol;
+  sel.value = cfg.symbols.includes(saved) ? saved
+    : cfg.symbols.includes(cfg.primarySymbol) ? cfg.primarySymbol : cfg.symbols[0];
 }
 
 // headers: [{ label, num, m }] — m:false olan sütunlar telefonda gizlenir,
@@ -67,7 +67,19 @@ function table(headers, rows, opts = {}) {
 // ===========================================================================
 function renderHeadline() {
   const el = $('headline');
-  if (!snap) return;
+  if (!snap) {
+    // İlk açılışta "Hoş geldin" metni kalır; parite değişince ya da veriler
+    // silinince önceki paritenin başlığı/KPI'ları ekranda kalmasın.
+    if (!el.dataset.dolu) return;
+    el.className = 'headline empty-state';
+    el.style.borderLeftColor = '';
+    el.innerHTML = `<h2>${esc($('symbolSelect').value)}</h2>
+      <p>Bu parite için kayıtlı tarama yok. <b>Tara</b> düğmesine bas.</p>`;
+    $('kpis').innerHTML = '';
+    $('lastScan').textContent = 'henüz tarama yok';
+    return;
+  }
+  el.dataset.dolu = '1';
   const s = snap.score;
   el.className = 'headline';
   el.style.borderLeftColor = getComputedStyle(document.documentElement)
@@ -521,7 +533,6 @@ function renderBalina() {
 // ===========================================================================
 const DURUM_RENK = {
   'TP1': 'green', 'TP2': 'green', 'TP3': 'green',
-  'STOP': 'red',
   'STOP': 'red', 'AÇIK': 'yellow', 'BEKLİYOR': 'yellow',
   'GİRİŞ OLMADI': '', 'ZAMAN AŞIMI': '', 'İPTAL': '',
 };
@@ -680,10 +691,15 @@ async function gunlukGuncelle() {
 // ===========================================================================
 // 8) SIRALAMA (izleme listesi)
 // ===========================================================================
-function renderSiralama() {
-  const el = $('tab-siralama');
-  const snaps = store.allSnapshots(cfg.symbols).sort((a, b) => b.score.longScore - a.score.longScore);
-  const rows = snaps.map((s, i) => ({
+const SIRALAMA_BASLIK = [{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true, m: false },
+  { label: 'Long', num: true }, { label: 'Short', num: true, m: false }, { label: 'Karar' },
+  { label: 'Güven', num: true, m: false }, { label: 'Trend', m: false },
+  { label: 'OI 1s', num: true }, { label: 'Funding', num: true, m: false },
+  { label: 'CVD', m: false }, { label: 'Balina', m: false },
+  { label: 'Risk' }, { label: 'Tarama', m: false }];
+
+function siralamaSatirlari(snaps) {
+  return snaps.slice().sort((a, b) => b.score.longScore - a.score.longScore).map((s, i) => ({
     click: s.symbol,
     cells: [String(i + 1), s.symbol, fmtPrice(s.price),
       { html: `<b>${s.score.longScore.toFixed(0)}</b>` }, s.score.shortScore.toFixed(0),
@@ -694,6 +710,21 @@ function renderSiralama() {
       s.orderFlow.label, s.whale.state, s.risk.level,
       timeAgo(s.timestamp)],
   }));
+}
+
+function renderSiralama() {
+  const el = $('tab-siralama');
+  const rows = siralamaSatirlari(store.allSnapshots(cfg.symbols));
+
+  const deep = store.latestDeepScan();
+  const deepSnaps = deep ? store.allSnapshots(deep.symbols) : [];
+  const deepHtml = deepSnaps.length ? `
+    <div class="card">
+      <h3>Son Derin Tarama <span class="muted">(${timeAgo(new Date(deep.ts).toISOString())})</span></h3>
+      ${table(SIRALAMA_BASLIK, siralamaSatirlari(deepSnaps))}
+      <div class="note">Tüm Piyasa'daki derin taramanın sonuçları. Satıra dokununca
+        parite izleme listesine eklenir ve yeniden taranır.</div>
+    </div>` : '';
 
   el.innerHTML = `
     <div class="card">
@@ -701,14 +732,10 @@ function renderSiralama() {
       <button class="btn wide" id="scanAllBtn">Listedeki ${cfg.symbols.length} pariteyi tara</button>
       <div class="note">Her parite ~10-15 sn sürer. Sonuçlar cihazda saklanır.</div>
     </div>
+    ${deepHtml}
     <div class="card">
-      ${table([{ label: '#' }, { label: 'Parite' }, { label: 'Fiyat', num: true, m: false },
-               { label: 'Long', num: true }, { label: 'Short', num: true, m: false }, { label: 'Karar' },
-               { label: 'Güven', num: true, m: false }, { label: 'Trend', m: false },
-               { label: 'OI 1s', num: true }, { label: 'Funding', num: true, m: false },
-               { label: 'CVD', m: false }, { label: 'Balina', m: false },
-               { label: 'Risk' }, { label: 'Tarama', m: false }], rows,
-              { empty: 'Henüz tarama yok — yukarıdaki düğmeye basın.' })}
+      <h3>İzleme Listesi</h3>
+      ${table(SIRALAMA_BASLIK, rows, { empty: 'Henüz tarama yok — yukarıdaki düğmeye basın.' })}
     </div>`;
 
   $('scanAllBtn')?.addEventListener('click', scanWatchlist);
@@ -734,9 +761,9 @@ function renderPiyasa() {
         <button class="btn primary" id="deepBtn">Ön eleme + derin tarama</button>
       </div>
       <div class="note">Ön eleme, ${fmtUsd(cfg.market.minQuoteVolumeUsdt)} USDT üstü
-        24s hacme sahip <b>tüm</b> pariteleri tarar — bugün ~380 parite, ~15 sn.
-        Kapsamı Ayarlar'daki hacim filtresinden değiştirebilirsin (0 yazarsan 527
-        paritenin tamamı). Derin tarama ayrıca dikkat skoru en yüksek
+        24s hacme sahip <b>tüm</b> pariteleri tarar${scr ? ` — son taramada ${scr.total} parite` : ''}, ~15 sn.
+        Kapsamı Ayarlar'daki hacim filtresinden değiştirebilirsin (0 yazarsan
+        tüm pariteler). Derin tarama ayrıca dikkat skoru en yüksek
         ${cfg.market.deepScanTop} pariteyi 9 motorla inceler (~2-3 dk).</div>
     </div>`;
 
@@ -873,11 +900,24 @@ function renderAyarlar() {
       </div>
     </div>`;
 
-  $('saveSettings').addEventListener('click', () => {
-    const syms = $('symbolsInput').value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+  $('saveSettings').addEventListener('click', async () => {
+    let syms = [...new Set($('symbolsInput').value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    // Yazım hatalı parite (ör. "BTC") taramada anlaşılmaz bir hata verir;
+    // kaydetmeden önce Binance'in listesiyle karşılaştırıp ayıklıyoruz.
+    let gecersiz = [];
+    try {
+      const { perpetualSymbols } = await import('./binance.js');
+      const gecerli = new Set(await perpetualSymbols(cfg.market.quoteAsset));
+      gecersiz = syms.filter((s) => !gecerli.has(s));
+      syms = syms.filter((s) => gecerli.has(s));
+    } catch { /* bağlantı yoksa olduğu gibi kaydet */ }
+    if (!syms.length) syms = DEFAULTS.symbols;
+    let primary = $('primaryInput').value.trim().toUpperCase();
+    // Varsayılan parite listede yoksa seçim kutusu boş kalıyordu
+    if (!syms.includes(primary)) primary = syms[0];
     cfg = saveConfig({
-      symbols: syms.length ? syms : DEFAULTS.symbols,
-      primarySymbol: $('primaryInput').value.trim().toUpperCase() || syms[0],
+      symbols: syms,
+      primarySymbol: primary,
       risk: {
         accountSizeUsdt: +$('acctInput').value || 1000,
         riskPerTradePct: +$('riskInput').value || 1,
@@ -892,7 +932,9 @@ function renderAyarlar() {
     });
     fillSymbols();
     renderAyarlar();
-    alert('Ayarlar kaydedildi.');
+    alert(gecersiz.length
+      ? `Ayarlar kaydedildi. Binance vadelide bulunamadığı için çıkarılanlar: ${gecersiz.join(', ')}`
+      : 'Ayarlar kaydedildi.');
   });
 
   $('resetSettings').addEventListener('click', () => {
@@ -903,7 +945,7 @@ function renderAyarlar() {
   });
 
   $('clearData').addEventListener('click', () => {
-    if (!confirm('Kayıtlı tüm tarama geçmişi silinecek. Emin misiniz?')) return;
+    if (!confirm('Kayıtlı tüm tarama geçmişi silinecek (ayarlar ve sinyal günlüğü korunur). Emin misiniz?')) return;
     store.clearAll();
     snap = null;
     cfg = loadConfig();
@@ -987,7 +1029,8 @@ function switchTab(name) {
 }
 
 function renderAll() {
-  if (snap) { renderHeadline(); renderKpis(); }
+  renderHeadline();
+  if (snap) renderKpis();
   renderKarar(); renderTrend(); renderSmart(); renderTurev();
   renderAkis(); renderBalina(); renderGunluk(); renderSiralama();
   renderPiyasa(); renderAyarlar();
@@ -1034,8 +1077,8 @@ function init() {
   $('symbolSelect').addEventListener('change', (e) => {
     const s = e.target.value;
     localStorage.setItem('kripto.lastSymbol', s);
-    const cached = store.latestSnapshot(s);
-    if (cached) { snap = cached; renderAll(); }
+    snap = store.latestSnapshot(s);
+    renderAll();
   });
 
   const last = store.latestSnapshot($('symbolSelect').value);

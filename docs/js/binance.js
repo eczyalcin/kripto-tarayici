@@ -37,12 +37,12 @@ async function req(base, path, params = {}, { useCache = true, timeout = 20000 }
         continue;
       }
       if (r.status === 451 || r.status === 403) {
-        throw new Error('Binance bu bölgeden erişimi engelliyor (HTTP ' + r.status + ')');
+        throw Object.assign(new Error('Binance bu bölgeden erişimi engelliyor (HTTP ' + r.status + ')'), { kalici: true });
       }
       // 4xx istemci hatası (geçersiz sembol vb.) tekrar denemekle düzelmez
       if (r.status >= 400 && r.status < 500) {
-        const detail = r.status === 400 ? 'geçersiz sembol veya parametre' : `HTTP ${r.status}`;
-        throw new Error(`${path.split('/').pop()}: ${detail}`);
+        const detail = r.status === 400 ? `geçersiz sembol veya parametre (${params.symbol ?? ''})` : `HTTP ${r.status}`;
+        throw Object.assign(new Error(`${path.split('/').pop()}: ${detail}`), { kalici: true });
       }
       if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}`);
       const data = await r.json();
@@ -50,9 +50,10 @@ async function req(base, path, params = {}, { useCache = true, timeout = 20000 }
       return data;
     } catch (e) {
       clearTimeout(timer);
-      lastErr = e;
+      // Tarayıcının "signal is aborted without reason" mesajı kullanıcıya bir şey söylemez
+      lastErr = e.name === 'AbortError' ? new Error(`yanıt ${timeout / 1000} sn içinde gelmedi`) : e;
       // Bölge engeli ve istemci hataları tekrar denenmez
-      if (e.message && (e.message.includes('engelliyor') || e.message.includes('geçersiz sembol'))) throw e;
+      if (e.kalici) throw e;
       await new Promise((res) => setTimeout(res, 600 * (attempt + 1)));
     }
   }
