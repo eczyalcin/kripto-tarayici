@@ -7,6 +7,10 @@ import { pickCandidates, scanMarket, scanSymbol, screenMarket } from './scan.js'
 import * as store from './store.js';
 import { fmt, fmtPrice, fmtUsd, signed, timeAgo } from './util.js';
 
+// Uygulama sürümü — sw.js içindeki VERSION ile AYNI olmalı (ekranda gösterilir,
+// ayrıca çalışan service worker'ın sürümüyle karşılaştırılır)
+const SURUM = '1.3.1';
+
 let cfg = loadConfig();
 let snap = null;
 let busy = false;
@@ -985,7 +989,15 @@ function renderAyarlar() {
         <button class="btn ghost" id="resetSettings">Varsayılanlara dön</button>
         <button class="btn danger" id="clearData">Kayıtlı verileri sil</button>
       </div>
+    </div>
+    <div class="card"><h3>Uygulama</h3>
+      <p class="muted" style="font-size:.84rem">Sürüm <b>${SURUM}</b>. Yeni sürüm
+        yayınlandığında üstte "Yeni sürüm hazır" şeridi çıkar.</p>
+      <div class="row-actions">
+        <button class="btn" id="checkUpdate">Güncellemeyi denetle</button>
+      </div>
     </div>`;
+  $('checkUpdate').addEventListener('click', guncellemeDenetle);
 
   el.querySelectorAll('[data-sil]').forEach((b) =>
     b.addEventListener('click', () => listedenCikar(b.dataset.sil)));
@@ -1128,19 +1140,47 @@ function renderAll() {
 
 // Yeni sürüm yayınlandığında telefonun eski sürümde kalmaması için:
 // service worker güncellemeyi bulunca üstte "yenile" şeridi çıkar.
+//
+// Telefon güncellemeyi çoğu zaman uygulama açılırken, bu kod dinlemeye
+// başlamadan bulur ve kurar; "updatefound" olayı kaçar ve şerit hiç çıkmaz.
+// Bu yüzden üç yol birden kullanılır: updatefound, controllerchange (yeni
+// sürüm devreye girdi) ve çalışan service worker'a sürümünü sormak.
+let swKayit = null;
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('sw.js').then((reg) => {
+  const sw = navigator.serviceWorker;
+  const oncedenVardi = !!sw.controller;   // ilk kurulumda şerit gösterilmez
+
+  sw.addEventListener('controllerchange', () => { if (oncedenVardi) showUpdateBar(); });
+  sw.addEventListener('message', (e) => {
+    if (e.data?.tip === 'surum' && e.data.surum !== SURUM) showUpdateBar();
+  });
+  sw.controller?.postMessage({ tip: 'surum' });
+
+  sw.register('sw.js').then((reg) => {
+    swKayit = reg;
+    if (reg.waiting && sw.controller) showUpdateBar();
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
       if (!nw) return;
       nw.addEventListener('statechange', () => {
-        if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar();
+        if (nw.state === 'installed' && sw.controller) showUpdateBar();
       });
     });
     // Uygulama her açılışta güncelleme var mı diye bakar
     setTimeout(() => reg.update().catch(() => {}), 3000);
   }).catch(() => {});
+}
+
+async function guncellemeDenetle() {
+  if (!swKayit) { showInfo(`Sürüm ${SURUM} — bu tarayıcı otomatik güncellemeyi desteklemiyor.`); return; }
+  try {
+    await swKayit.update();
+    if (swKayit.installing || swKayit.waiting) showInfo('Yeni sürüm bulundu, yükleniyor...');
+    else showInfo(`En güncel sürümü kullanıyorsun (${SURUM}).`);
+  } catch {
+    showError('Güncelleme denetlenemedi — internet bağlantını kontrol et.');
+  }
 }
 
 function showUpdateBar() {
@@ -1160,6 +1200,7 @@ function showUpdateBar() {
 }
 
 function init() {
+  $('surumYazi').textContent = `Sürüm ${SURUM}`;
   fillSymbols();
   document.querySelectorAll('.tab').forEach((t) =>
     t.addEventListener('click', () => switchTab(t.dataset.tab)));
