@@ -39,12 +39,37 @@ function showMsg(cls, html, ms) {
 const showError = (msg) => showMsg('error-box', `<b>Bir sorun oluştu</b><br>${esc(msg)}`, 12000);
 const showInfo = (msg) => showMsg('error-box info', esc(msg), 6000);
 
-function fillSymbols() {
+// disari: izleme listesinde olmayan ama o an taranan parite (piyasa tablosundan
+// dokunulan gibi) — listeye eklenmeden seçim kutusunda geçici olarak görünür.
+function fillSymbols(disari = null) {
   const sel = $('symbolSelect');
-  sel.innerHTML = cfg.symbols.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  const opt = (s, etiket = s) => `<option value="${esc(s)}">${esc(etiket)}</option>`;
+  const ekstra = disari && !cfg.symbols.includes(disari) ? opt(disari, `${disari} (liste dışı)`) : '';
+  sel.innerHTML = cfg.symbols.map((s) => opt(s)).join('') + ekstra;
+  if (ekstra) { sel.value = disari; return; }
   const saved = localStorage.getItem('kripto.lastSymbol');
   sel.value = cfg.symbols.includes(saved) ? saved
     : cfg.symbols.includes(cfg.primarySymbol) ? cfg.primarySymbol : cfg.symbols[0];
+}
+
+function listeyeEkle(sym) {
+  if (!cfg.symbols.includes(sym)) cfg = saveConfig({ symbols: [...cfg.symbols, sym] });
+  fillSymbols();
+  $('symbolSelect').value = sym;
+  renderHeadline(); renderSiralama(); renderAyarlar();
+  showInfo(`${sym} izleme listesine eklendi.`);
+}
+
+function listedenCikar(sym) {
+  const kalan = cfg.symbols.filter((s) => s !== sym);
+  if (!kalan.length) { showError('İzleme listesinde en az bir parite kalmalı.'); return; }
+  cfg = saveConfig({
+    symbols: kalan,
+    primarySymbol: kalan.includes(cfg.primarySymbol) ? cfg.primarySymbol : kalan[0],
+  });
+  // O an ekrandaki parite çıkarıldıysa seçim kutusunda "liste dışı" olarak kalsın
+  fillSymbols(snap?.symbol === sym ? sym : null);
+  renderHeadline(); renderSiralama(); renderAyarlar();
 }
 
 // headers: [{ label, num, m }] — m:false olan sütunlar telefonda gizlenir,
@@ -89,7 +114,10 @@ function renderHeadline() {
     <div class="decision ${decClass(s.decision)}">${esc(s.decision)} —
       Long ${s.longScore.toFixed(1)}/100 · Short ${s.shortScore.toFixed(1)}/100 ·
       güven %${s.confidence.toFixed(0)}</div>
-    <p class="answer">${esc(s.answer)}</p>`;
+    <p class="answer">${esc(s.answer)}</p>
+    ${cfg.symbols.includes(snap.symbol) ? ''
+      : '<div class="row-actions"><button class="btn" id="addWatch">＋ İzleme listesine ekle</button></div>'}`;
+  $('addWatch')?.addEventListener('click', () => listeyeEkle(snap.symbol));
   $('lastScan').textContent = `${snap.symbol} · ${timeAgo(snap.timestamp)}`;
 }
 
@@ -138,7 +166,8 @@ function renderKarar() {
   if (setup.available) {
     const rows = [
       ['Yön', `<span class="${setup.direction === 'LONG' ? 'up' : 'down'}"><b>${setup.direction}</b></span>`],
-      ['Olasılık', `<b>%${setup.probability.toFixed(1)}</b>`],
+      ['Olasılık (formül)', `<b>%${setup.probability.toFixed(1)}</b>`],
+      ['Geçmişte tuttu', gecmisBasari(s.longScore, setup.probability)],
       ['Giriş bölgesi', `<b>${fmtPrice(setup.entryZone[0])} – ${fmtPrice(setup.entryZone[1])}</b>`],
       ['Giriş', `<b>${fmtPrice(setup.entry)}</b>`],
       ['Stop', `<b>${fmtPrice(setup.stop)}</b> <span class="muted">(%${fmt(setup.stopDistancePct)})</span>`],
@@ -194,6 +223,20 @@ function renderKarar() {
       </div>
       <div class="card"><h3>Skor Geçmişi</h3>${histHtml}</div>
     </div>`;
+}
+
+// "Olasılık" bir formüldür; günlükte aynı skor bandındaki sinyallerin gerçekte
+// TP1'e ulaşma oranı yanında gösterilir ki kullanıcı tahmini ölçümle kıyaslasın.
+function gecmisBasari(longScore, tahmin) {
+  const b = journal.bantIcin(longScore);
+  if (!b?.adet) return '<span class="muted">bu skor bandında henüz sonuçlanmış sinyal yok</span>';
+  const oran = `%${b.basariOrani.toFixed(0)}`;
+  if (b.adet < journal.BANT_MIN_ADET) {
+    return `<span class="muted">${oran} — ${b.adet}/${journal.BANT_MIN_ADET} sinyal, henüz güvenilir değil</span>`;
+  }
+  const iyimser = tahmin - b.basariOrani >= 10
+    ? ' <span class="badge red">tahmin iyimser</span>' : '';
+  return `<b>${oran}</b> <span class="muted">(${b.adet} sinyal)</span>${iyimser}`;
 }
 
 // ===========================================================================
@@ -551,8 +594,14 @@ function renderGunluk() {
         ne kadar tuttuğunu görürsün.</p>
       <div class="row-actions">
         <button class="btn primary" id="gunlukGuncelle">Sonuçları güncelle</button>
+        ${hepsi.length ? '<button class="btn" id="gunlukYedekle">⬇ Yedekle</button>' : ''}
+        <button class="btn" id="gunlukYukle">⬆ Yedekten yükle</button>
+        <input type="file" id="gunlukDosya" accept=".json,application/json" hidden>
         ${hepsi.length ? '<button class="btn danger" id="gunlukSil">Günlüğü temizle</button>' : ''}
       </div>
+      <div class="note">Günlük yalnızca bu cihazda tutulur. Telefon değiştirmeden ya da
+        tarayıcı verisini silmeden önce <b>Yedekle</b> ile dosyaya kaydet; yeni cihazda
+        <b>Yedekten yükle</b> ile geri al. Yükleme mevcut kayıtları silmez, birleştirir.</div>
       <div class="kpi-grid" style="margin-top:12px">
         <div class="kpi"><div class="l">Toplam sinyal</div><div class="v">${ist.toplam}</div>
           <div class="s flat">${ist.acik} açık</div></div>
@@ -665,12 +714,46 @@ function renderGunluk() {
   el.innerHTML = kartlar + kalibrasyon + kirilim + listeler;
 
   $('gunlukGuncelle')?.addEventListener('click', gunlukGuncelle);
+  $('gunlukYedekle')?.addEventListener('click', gunlukYedekle);
+  $('gunlukYukle')?.addEventListener('click', () => $('gunlukDosya').click());
+  $('gunlukDosya')?.addEventListener('change', async (e) => {
+    const dosya = e.target.files?.[0];
+    e.target.value = '';
+    if (!dosya) return;
+    try {
+      const r = journal.iceAktar(await dosya.text());
+      renderGunluk();
+      showInfo(`Yedek yüklendi: ${r.eklenen} yeni kayıt eklendi, ${r.guncellenen} kayıt güncellendi` +
+        (r.atlanan ? `, ${r.atlanan} bozuk kayıt atlandı.` : '.'));
+    } catch (err) {
+      showError(err.message || String(err));
+    }
+  });
   $('gunlukSil')?.addEventListener('click', () => {
-    if (!confirm('Tüm sinyal geçmişi silinecek. Emin misiniz?')) return;
+    if (!confirm('Tüm sinyal geçmişi silinecek. Önce "Yedekle" ile dosyaya kaydetmen önerilir. Emin misiniz?')) return;
     journal.hepsiniSil();
     renderGunluk();
   });
   wireRowClicks(el);
+}
+
+async function gunlukYedekle() {
+  const d = new Date();
+  const gun = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  const ad = `kripto-gunluk-${gun}.json`;
+  const blob = new Blob([journal.disaAktar()], { type: 'application/json' });
+  // iPhone'da ana ekrana eklenmiş uygulama indirme bağlantısını açamaz;
+  // orada paylaşım menüsü (Dosyalar'a kaydet, mesajla gönder) kullanılır.
+  const file = new File([blob], ad, { type: 'application/json' });
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: ad }); return; } catch { /* iptal edildi */ return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: ad });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 async function gunlukGuncelle() {
@@ -723,7 +806,8 @@ function renderSiralama() {
       <h3>Son Derin Tarama <span class="muted">(${timeAgo(new Date(deep.ts).toISOString())})</span></h3>
       ${table(SIRALAMA_BASLIK, siralamaSatirlari(deepSnaps))}
       <div class="note">Tüm Piyasa'daki derin taramanın sonuçları. Satıra dokununca
-        parite izleme listesine eklenir ve yeniden taranır.</div>
+        parite yeniden taranır; listeye eklemek için üstteki "İzleme listesine ekle"
+        düğmesini kullan.</div>
     </div>` : '';
 
   el.innerHTML = `
@@ -844,12 +928,11 @@ function wireMarketButtons() {
 function wireRowClicks(root) {
   root.querySelectorAll('tr[data-click]').forEach((tr) => {
     tr.addEventListener('click', () => {
+      if (busy) return;
       const sym = tr.dataset.click;
-      if (!cfg.symbols.includes(sym)) {
-        cfg = saveConfig({ symbols: [...cfg.symbols, sym] });
-        fillSymbols();
-      }
-      $('symbolSelect').value = sym;
+      // Eskiden dokunulan her parite listeye kalıcı ekleniyor, liste şişiyordu.
+      // Artık sadece taranır; eklemek isteyen başlıktaki düğmeyi kullanır.
+      fillSymbols(sym);
       runScan(sym);
     });
   });
@@ -862,7 +945,11 @@ function renderAyarlar() {
   const el = $('tab-ayarlar');
   const info = store.storageInfo();
   el.innerHTML = `
-    <div class="card"><h3>İzleme Listesi</h3>
+    <div class="card"><h3>İzleme Listesi <span class="muted">(${cfg.symbols.length})</span></h3>
+      <div class="chips">${cfg.symbols.map((s) => `<span class="chip">${esc(s)}<button
+        data-sil="${esc(s)}" aria-label="${esc(s)} listeden çıkar" title="Listeden çıkar">×</button></span>`).join('')}</div>
+      <div class="note" style="margin-bottom:12px">× ile çıkarılan parite hemen kaydedilir;
+        kayıtlı taraması ve sinyal günlüğü silinmez.</div>
       <div class="field"><label>Pariteler (virgülle ayırın)</label>
         <input id="symbolsInput" value="${esc(cfg.symbols.join(', '))}"></div>
       <div class="field"><label>Varsayılan parite</label>
@@ -899,6 +986,9 @@ function renderAyarlar() {
         <button class="btn danger" id="clearData">Kayıtlı verileri sil</button>
       </div>
     </div>`;
+
+  el.querySelectorAll('[data-sil]').forEach((b) =>
+    b.addEventListener('click', () => listedenCikar(b.dataset.sil)));
 
   $('saveSettings').addEventListener('click', async () => {
     let syms = [...new Set($('symbolsInput').value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean))];

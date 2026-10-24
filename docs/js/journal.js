@@ -96,6 +96,40 @@ export function hepsiniSil() {
   localStorage.removeItem(KEY);
 }
 
+// ----------------------------------------------------------------- yedek
+// Günlük sadece bu tarayıcıda durur; tarayıcı verisi silinirse ya da telefon
+// değişirse haftaların kaydı gider. Dosyaya yedeklenip geri yüklenebilsin diye.
+export function disaAktar() {
+  return JSON.stringify({ tur: 'kripto-panel-gunluk', surum: 1, tarih: new Date().toISOString(), kayitlar: oku() });
+}
+
+const gecerliKayit = (s) => s && typeof s.id === 'string' && typeof s.symbol === 'string'
+  && (s.yon === 'LONG' || s.yon === 'SHORT') && isFinite(s.giris) && isFinite(s.stop)
+  && isFinite(s.ts) && Array.isArray(s.hedefler) && typeof s.durum === 'string';
+
+/**
+ * Yedek dosyasını mevcut günlükle birleştirir (hiçbir kayıt silinmez).
+ * Aynı kayıt iki tarafta da varsa en son ölçülen sürüm kalır.
+ */
+export function iceAktar(metin) {
+  let veri;
+  try { veri = JSON.parse(metin); } catch { throw new Error('Dosya okunamadı — JSON biçiminde değil'); }
+  const gelen = Array.isArray(veri) ? veri : veri?.kayitlar;
+  if (!Array.isArray(gelen)) throw new Error('Bu dosya bir Kripto Panel günlük yedeği değil');
+  const gecerli = gelen.filter(gecerliKayit);
+  if (!gecerli.length) throw new Error('Dosyada geçerli sinyal kaydı bulunamadı');
+
+  const harita = new Map(oku().map((s) => [s.id, s]));
+  let eklenen = 0, guncellenen = 0;
+  for (const s of gecerli) {
+    const eski = harita.get(s.id);
+    if (!eski) { harita.set(s.id, s); eklenen++; }
+    else if ((s.sonKontrol || 0) > (eski.sonKontrol || 0)) { harita.set(s.id, s); guncellenen++; }
+  }
+  if (!yaz([...harita.values()])) throw new Error('Kayıt alanı dolu, yedek yüklenemedi');
+  return { eklenen, guncellenen, atlanan: gelen.length - gecerli.length };
+}
+
 // ------------------------------------------------------------------- kayıt
 /**
  * Taramadan çıkan setup'ı günlüğe ekler.
@@ -314,6 +348,32 @@ function ozet(kayitlar) {
   };
 }
 
+const BANTLAR = [
+  { ad: '75+ (Strong)', alt: 75, ust: 101 },
+  { ad: '62-75 (Long)', alt: 62, ust: 75 },
+  { ad: '55-62 (Weak Long)', alt: 55, ust: 62 },
+  { ad: '38-45 (Weak Short)', alt: 38, ust: 45 },
+  { ad: '25-38 (Short)', alt: 25, ust: 38 },
+  { ad: '25 altı (Strong Short)', alt: -1, ust: 25 },
+];
+
+// Bant oranı bu sayıdan az sonuçlanmış sinyale dayanıyorsa güvenilir sayılmaz
+export const BANT_MIN_ADET = 10;
+
+function bantOzeti(b, bitmis) {
+  const grup = bitmis.filter((s) => s.longSkor >= b.alt && s.longSkor < b.ust);
+  const o = ozet(grup);
+  // Sistemin o banttaki ortalama tahmini
+  const tahmin = grup.length ? grup.reduce((a, s) => a + (s.olasilik || 0), 0) / grup.length : null;
+  return { ...b, ...o, tahmin, fark: o.adet ? o.basariOrani - tahmin : null };
+}
+
+/** Bir skorun düştüğü bantta geçmiş sinyallerin gerçekte ne kadar tuttuğu. */
+export function bantIcin(longSkor) {
+  const b = BANTLAR.find((x) => longSkor >= x.alt && longSkor < x.ust);
+  return b ? bantOzeti(b, oku().filter(kararlandi)) : null;
+}
+
 /**
  * Kalibrasyon: skor bandına göre gerçek başarı oranı.
  * Sistemin "olasılık" tahmininin tutup tutmadığını burada görürüz.
@@ -325,22 +385,7 @@ export function istatistik() {
   const bitmis = hepsi.filter(kararlandi);
   const girisOlmayan = hepsi.filter((s) => s.sonuc === SONUC.GIRIS_OLMADI).length;
 
-  const bantlar = [
-    { ad: '75+ (Strong)', alt: 75, ust: 101 },
-    { ad: '62-75 (Long)', alt: 62, ust: 75 },
-    { ad: '55-62 (Weak Long)', alt: 55, ust: 62 },
-    { ad: '38-45 (Weak Short)', alt: 38, ust: 45 },
-    { ad: '25-38 (Short)', alt: 25, ust: 38 },
-    { ad: '25 altı (Strong Short)', alt: -1, ust: 25 },
-  ];
-
-  const bantIstatistik = bantlar.map((b) => {
-    const grup = bitmis.filter((s) => s.longSkor >= b.alt && s.longSkor < b.ust);
-    const o = ozet(grup);
-    // Sistemin o banttaki ortalama tahmini
-    const tahmin = grup.length ? grup.reduce((a, s) => a + (s.olasilik || 0), 0) / grup.length : null;
-    return { ...b, ...o, tahmin, fark: o.adet ? o.basariOrani - tahmin : null };
-  }).filter((b) => b.adet > 0);
+  const bantIstatistik = BANTLAR.map((b) => bantOzeti(b, bitmis)).filter((b) => b.adet > 0);
 
   const yone = ['LONG', 'SHORT'].map((y) => ({
     yon: y, ...ozet(bitmis.filter((s) => s.yon === y)),
